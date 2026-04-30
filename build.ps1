@@ -1,7 +1,11 @@
 $ErrorActionPreference = "Stop"
 
 python -m pip install pyinstaller
-python -m PyInstaller --noconfirm --onefile --windowed --name SeverusAI .\launcher.py
+python -m PyInstaller --noconfirm --onefile --windowed --name SeverusAI `
+    --collect-data faster_whisper `
+    --add-data "SeverusAI\dictation_begin.wav;SeverusAI" `
+    --add-data "SeverusAI\reverse_dictation_end.mp3;SeverusAI" `
+    .\launcher.py
 
 if (-not (Test-Path ".\dist\SeverusAI.exe")) {
     throw "Build failed: .\dist\SeverusAI.exe was not created."
