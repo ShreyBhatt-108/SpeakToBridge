@@ -16,6 +16,9 @@ ArchitecturesInstallIn64BitMode=x64compatible
 PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
 UninstallDisplayIcon={app}\SeverusAI.exe
+CloseApplications=force
+CloseApplicationsFilter=SeverusAI.exe
+RestartApplications=no
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
@@ -32,3 +35,6 @@ Name: "{autodesktop}\Severus AI"; Filename: "{app}\SeverusAI.exe"; Tasks: deskto
 
 [Run]
 Filename: "{app}\SeverusAI.exe"; Description: "Launch Severus AI"; Flags: nowait postinstall skipifsilent
+
+[UninstallDelete]
+Type: filesandordirs; Name: "{app}"
