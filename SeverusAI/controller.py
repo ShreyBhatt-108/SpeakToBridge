@@ -6,6 +6,7 @@ import subprocess
 import threading
 import time
 import winsound
+import os
 from ctypes import wintypes, windll
 from pathlib import Path
 
@@ -201,12 +202,19 @@ class DictationController(QObject):
             f"$synth.Speak('{escaped}');"
         )
         try:
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            startupinfo.wShowWindow = 0
+            creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
             with self._speech_lock:
                 subprocess.run(
                     ["powershell", "-NoProfile", "-Command", cmd],
                     check=True,
                     capture_output=True,
                     text=True,
+                    startupinfo=startupinfo,
+                    creationflags=creationflags,
+                    env=os.environ.copy(),
                 )
             self.status_changed.emit("Read aloud complete.")
         except Exception as exc:  # pragma: no cover

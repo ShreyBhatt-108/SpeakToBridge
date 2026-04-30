@@ -38,3 +38,4 @@ Filename: "{app}\SeverusAI.exe"; Description: "Launch Severus AI"; Flags: nowait
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{app}"
+Type: filesandordirs; Name: "{localappdata}\SeverusAI"
