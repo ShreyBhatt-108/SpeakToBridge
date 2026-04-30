@@ -1,14 +1,14 @@
 $ErrorActionPreference = "Stop"
 
 python -m pip install pyinstaller
-python -m PyInstaller --noconfirm --onefile --windowed --name SeverusAI `
+python -m PyInstaller --noconfirm --windowed --onedir --name SeverusAI `
     --collect-data faster_whisper `
     --add-data "SeverusAI\dictation_begin.wav;SeverusAI" `
     --add-data "SeverusAI\reverse_dictation_end.mp3;SeverusAI" `
     .\launcher.py
 
-if (-not (Test-Path ".\dist\SeverusAI.exe")) {
-    throw "Build failed: .\dist\SeverusAI.exe was not created."
+if (-not (Test-Path ".\dist\SeverusAI\SeverusAI.exe")) {
+    throw "Build failed: .\dist\SeverusAI\SeverusAI.exe was not created."
 }
 
 $isccCandidates = @(
@@ -27,7 +27,7 @@ foreach ($candidate in $isccCandidates) {
 
 if (-not $iscc) {
     Write-Warning "Inno Setup not found. EXE build completed, installer skipped."
-    Write-Host "EXE: .\dist\SeverusAI.exe"
+    Write-Host "EXE: .\dist\SeverusAI\SeverusAI.exe"
     Write-Host "Install Inno Setup 6, then run: `"$pwd\build.ps1`" again to generate installer."
     exit 0
 }
@@ -38,5 +38,5 @@ if (-not (Test-Path ".\dist\SeverusAI-Setup.exe")) {
     throw "Installer build failed: .\dist\SeverusAI-Setup.exe was not created."
 }
 
-Write-Host "EXE build completed: .\dist\SeverusAI.exe"
+Write-Host "EXE build completed: .\dist\SeverusAI\SeverusAI.exe"
 Write-Host "Installer completed: .\dist\SeverusAI-Setup.exe"

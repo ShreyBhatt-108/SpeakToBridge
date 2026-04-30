@@ -41,7 +41,7 @@ python -m SeverusAI
 ```
 
 Outputs:
-- `dist\SeverusAI.exe` (portable app)
+- `dist\SeverusAI\SeverusAI.exe` (portable app folder build)
 - `dist\SeverusAI-Setup.exe` (Windows installer, when Inno Setup 6 is installed)
 
 If Inno Setup is not installed, the script still builds the EXE and tells you installer generation was skipped.
@@ -50,7 +50,6 @@ If Inno Setup is not installed, the script still builds the EXE and tells you in
 
 - Faster Whisper model files are downloaded on first use and cached in local app data.
 - Runtime is offline after model download unless you choose a new model that is not yet cached.
-- Developer learning guide: see `CODE_WALKTHROUGH.md`.
 
 ## Credits
 
