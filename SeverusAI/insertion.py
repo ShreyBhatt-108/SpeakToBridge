@@ -15,10 +15,24 @@ class TextInserter:
     def __init__(self) -> None:
         self._keyboard = Controller()
         self._clipboard_lock = threading.Lock()
+        self._insert_guard_lock = threading.Lock()
+        self._last_insert_text = ""
+        self._last_insert_ts = 0.0
+        self._duplicate_guard_window_s = 1.5
 
     def insert(self, text: str) -> tuple[bool, str]:
-        if not text.strip():
+        normalized = text.strip()
+        if not normalized:
             return False, "Transcription returned empty text."
+        with self._insert_guard_lock:
+            now = time.monotonic()
+            if (
+                normalized == self._last_insert_text
+                and (now - self._last_insert_ts) <= self._duplicate_guard_window_s
+            ):
+                return True, "Duplicate insert ignored."
+            self._last_insert_text = normalized
+            self._last_insert_ts = now
 
         original_clipboard: str | None = None
         try:
