@@ -279,7 +279,7 @@ class SeverusAIRuntime(QObject):
             return "Loading model from cache..."
         if "preparing selected model" in lower or "model selected" in lower:
             return "Preparing model..."
-        if lower.strip() == "model ready.":
+        if lower.startswith("model ready"):
             return "Ready"
         if "model preload failed" in lower:
             return "Failed"
