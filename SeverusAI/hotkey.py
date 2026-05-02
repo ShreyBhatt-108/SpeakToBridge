@@ -117,11 +117,6 @@ class HoldHotkeyListener(QObject):
             listener.stop()
 
     def _on_press(self, key) -> None:  # noqa: ANN001
-        modifier = self._key_to_modifier(key)
-        if modifier is not None:
-            self._pressed_modifiers.add(modifier)
-            return
-
         if self._matches_activation(key) and not self._activation_down:
             self._activation_down = True
             self.hotkey_pressed.emit()
@@ -130,13 +125,13 @@ class HoldHotkeyListener(QObject):
         if self._matches_read(key) and not self._read_down:
             self._read_down = True
             self.read_hotkey_pressed.emit()
-
-    def _on_release(self, key) -> None:  # noqa: ANN001
-        modifier = self._key_to_modifier(key)
-        if modifier is not None:
-            self._pressed_modifiers.discard(modifier)
             return
 
+        modifier = self._key_to_modifier(key)
+        if modifier is not None:
+            self._pressed_modifiers.add(modifier)
+
+    def _on_release(self, key) -> None:  # noqa: ANN001
         if self._matches_activation(key) and self._activation_down:
             self._activation_down = False
             self.hotkey_released.emit()
@@ -144,6 +139,11 @@ class HoldHotkeyListener(QObject):
 
         if self._matches_read(key) and self._read_down:
             self._read_down = False
+            return
+
+        modifier = self._key_to_modifier(key)
+        if modifier is not None:
+            self._pressed_modifiers.discard(modifier)
 
     @staticmethod
     def _key_to_modifier(key) -> str | None:  # noqa: ANN001

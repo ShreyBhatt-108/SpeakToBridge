@@ -27,6 +27,24 @@ Windows-only local dictation app built with PySide6 + faster-whisper.
 - Default microphone only.
 - Clipboard safety: existing clipboard text is backed up before paste and restored right after insertion.
 
+## Release notes (v1.1.1)
+
+This update focuses on making everyday dictation use more reliable and less confusing.
+
+- The extra settings panel now opens in a more natural place, directly after the `Show More Settings` controls area, instead of appearing unexpectedly in the middle of the page.
+- Hotkey handling is more robust for Windows key combinations:
+  - better handling of generic and left/right modifier key events
+  - improved support for combos like `Ctrl+Win`
+- Dictation on/off behavior is stricter:
+  - when dictation is off, dictation and read-aloud shortcuts stay off
+  - prevents late transcript insertion after dictation has been disabled
+- Exit behavior is clearer:
+  - when users close the settings window with `Alt+F4`, Severus exits instead of lingering in a confusing in-between state
+- Word Bank behavior is smarter:
+  - keeps exact replacements
+  - adds local fuzzy matching for near-miss words/phrases
+  - uses dictionary context as a transcription prompt to improve recognition for names and special terms
+
 ## Run from source
 
 ```powershell
