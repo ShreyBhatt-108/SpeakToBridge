@@ -6,6 +6,7 @@ from pathlib import Path
 
 from .constants import (
     DEFAULT_ACTIVATION_HOTKEY,
+    DEFAULT_READ_HOTKEY,
     DEFAULT_DICTIONARY_ENABLED,
     DEFAULT_INSERT_MODE,
     DEFAULT_LANGUAGE,
@@ -24,6 +25,7 @@ class AppConfig:
     privacy_mode: str = DEFAULT_PRIVACY_MODE
     dictionary_enabled: bool = DEFAULT_DICTIONARY_ENABLED
     activation_hotkey: str = DEFAULT_ACTIVATION_HOTKEY
+    read_hotkey: str = DEFAULT_READ_HOTKEY
 
     @classmethod
     def from_dict(cls, data: dict) -> "AppConfig":
@@ -36,6 +38,7 @@ class AppConfig:
             privacy_mode=str(data.get("privacy_mode", default.privacy_mode)),
             dictionary_enabled=bool(data.get("dictionary_enabled", default.dictionary_enabled)),
             activation_hotkey=str(data.get("activation_hotkey", default.activation_hotkey)),
+            read_hotkey=str(data.get("read_hotkey", default.read_hotkey)),
         )
 
     def to_dict(self) -> dict:

@@ -8,7 +8,7 @@ from PySide6.QtCore import QObject, Signal
 from PySide6.QtWidgets import QApplication, QMenu, QMessageBox, QStyle, QSystemTrayIcon
 
 from .config import AppConfig, ConfigStore
-from .constants import APP_NAME, DEFAULT_ACTIVATION_HOTKEY
+from .constants import APP_NAME, DEFAULT_ACTIVATION_HOTKEY, DEFAULT_READ_HOTKEY
 from .controller import DictationController
 from .hotkey import HoldHotkeyListener
 from .logging_utils import configure_logging
@@ -37,6 +37,7 @@ class SeverusAIRuntime(QObject):
         self._window = SettingsWindow(
             initial_model=self._config.model_name,
             initial_hotkey=self._hotkey.activation_hotkey_display,
+            initial_read_hotkey=self._hotkey.read_hotkey_display,
         )
         self._controller = DictationController(
             config=self._config,
@@ -52,6 +53,8 @@ class SeverusAIRuntime(QObject):
         self._last_status_message = ""
         self._pending_model_name: str | None = None
         self._model_cache_refresh_generation = 0
+        self._last_notification_message = ""
+        self._model_ready_map: dict[str, bool] = {}
         self._setup_tray()
         self._wire_events()
         self._window.set_word_bank_entries(self._word_bank.get_entries())
@@ -59,6 +62,7 @@ class SeverusAIRuntime(QObject):
         self._window.set_word_stats(last_words=0, total_words=0, total_clips=0)
         self._window.set_dictation_enabled(True)
         self._window.set_model_status("Ready")
+        self._window.set_active_model(self._config.model_name)
         self._set_status(f"Ready. Press {self._hotkey.activation_hotkey_display} to start or stop dictation.")
         self._hotkey.start()
 
@@ -91,6 +95,7 @@ class SeverusAIRuntime(QObject):
         self._window.model_cache_refresh_requested.connect(self._on_model_cache_refresh_requested)
         self._window.model_cache_delete_requested.connect(self._on_model_cache_delete_requested)
         self._window.hotkey_apply_requested.connect(self._on_hotkey_changed)
+        self._window.read_hotkey_apply_requested.connect(self._on_read_hotkey_changed)
         self._window.word_bank_save_requested.connect(self._on_word_bank_save_requested)
         self._window.dictation_toggle_requested.connect(self._toggle_dictation)
         self._hotkey.hotkey_pressed.connect(self._on_hotkey_pressed)
@@ -105,6 +110,10 @@ class SeverusAIRuntime(QObject):
         self.model_cache_entries_ready.connect(self._apply_model_cache_entries)
 
     def _on_model_changed(self, model_name: str) -> None:
+        if not self._model_ready_map.get(model_name, False):
+            self._set_status(f"Model '{model_name}' is not ready yet. Wait for download/preparation to complete.")
+            self._window.focus_status()
+            return
         if model_name == self._config.model_name:
             self._set_status(f"Model unchanged: {model_name}.")
             self._window.focus_status()
@@ -121,7 +130,7 @@ class SeverusAIRuntime(QObject):
         self._controller.preload_model_async(model_name)
         self._set_status(f"Model selected: {model_name}. Preparing model now...")
         self._window.focus_status()
-        self._tray.showMessage(APP_NAME, f"Model selected: {model_name}. Preparing model...", QSystemTrayIcon.MessageIcon.Information, 1600)
+        self._notify_user(f"Model selected: {model_name}. Preparing model...", QSystemTrayIcon.MessageIcon.Information, 1600)
 
     def _on_model_preload_finished(self, model_name: str, success: bool, message: str) -> None:
         if self._pending_model_name != model_name:
@@ -133,17 +142,19 @@ class SeverusAIRuntime(QObject):
             self._window.set_model_value(model_name)
             self._window.set_model_status(f"Ready: {model_name}")
             self._refresh_model_cache_list()
-            self._tray.showMessage(APP_NAME, f"Model ready: {model_name}.", QSystemTrayIcon.MessageIcon.Information, 1600)
+            self._window.set_active_model(model_name)
+            self._notify_user(f"Model ready: {model_name}.", QSystemTrayIcon.MessageIcon.Information, 1600)
             return
         self._window.set_model_value(self._config.model_name)
+        self._window.set_active_model(self._config.model_name)
         self._window.set_model_status(f"Failed. Still using {self._config.model_name}.")
         self._refresh_model_cache_list()
         short = message if len(message) <= 120 else f"{message[:117]}..."
-        self._tray.showMessage(
-            APP_NAME,
+        self._notify_user(
             f"Model change failed. Still using {self._config.model_name}. {short}",
             QSystemTrayIcon.MessageIcon.Warning,
             2500,
+            always=True,
         )
 
     def _toggle_dictation(self) -> None:
@@ -175,35 +186,28 @@ class SeverusAIRuntime(QObject):
         self._config_store.save(self._config)
         self._window.set_hotkey_value(display)
         self._set_status(f"Activation hotkey updated to {display}.")
-        self._tray.showMessage(
-            APP_NAME,
-            f"Activation hotkey updated to {display}.",
-            QSystemTrayIcon.MessageIcon.Information,
-            1800,
-        )
+        self._notify_user(f"Activation hotkey updated to {display}.", QSystemTrayIcon.MessageIcon.Information, 1800)
+
+    def _on_read_hotkey_changed(self, hotkey_text: str) -> None:
+        try:
+            display = self._hotkey.set_read_hotkey(hotkey_text)
+        except ValueError as exc:
+            self._set_status(f"Invalid read-aloud hotkey: {exc}")
+            return
+        self._config.read_hotkey = hotkey_text
+        self._config_store.save(self._config)
+        self._window.set_read_hotkey_value(display)
+        self._set_status(f"Read-aloud hotkey updated to {display}.")
 
     def _on_recording_changed(self, recording: bool) -> None:
-        if recording:
-            self._tray.showMessage(
-                APP_NAME,
-                f"Recording started. Press {self._hotkey.activation_hotkey_display} again to stop.",
-                QSystemTrayIcon.MessageIcon.Information,
-                1200,
-            )
-        else:
-            self._tray.showMessage(APP_NAME, "Recording stopped. Transcribing...", QSystemTrayIcon.MessageIcon.Information, 1200)
+        # Keep frequent dictation state changes in the status field only.
+        _ = recording
 
     def _on_word_bank_save_requested(self, entries) -> None:  # noqa: ANN001
         try:
             self._word_bank.save_entries(entries)
             self._window.set_word_bank_entries(self._word_bank.get_entries())
             self._set_status("Word bank saved. Future transcripts will use these corrections.")
-            self._tray.showMessage(
-                APP_NAME,
-                "Word bank saved.",
-                QSystemTrayIcon.MessageIcon.Information,
-                1400,
-            )
         except Exception as exc:
             self._on_error(f"Unable to save word bank ({exc}).")
 
@@ -246,8 +250,6 @@ class SeverusAIRuntime(QObject):
             total_clips=self._total_clips,
         )
         self._word_count_action.setText(f"Words: {self._total_words} total ({self._last_words} last)")
-        clipped = text if len(text) <= 120 else f"{text[:117]}..."
-        self._tray.showMessage(APP_NAME, f"Transcript: {clipped}", QSystemTrayIcon.MessageIcon.Information, 1800)
         self._set_status(
             f"Transcript ready: {self._last_words} words. "
             f"Total dictated: {self._total_words} words in {self._total_clips} clips."
@@ -255,7 +257,7 @@ class SeverusAIRuntime(QObject):
 
     def _on_error(self, message: str) -> None:
         self._set_status(message)
-        self._tray.showMessage(APP_NAME, message, QSystemTrayIcon.MessageIcon.Critical, 2500)
+        self._notify_user(message, QSystemTrayIcon.MessageIcon.Critical, 2500, always=True)
 
     def _set_status(self, message: str) -> None:
         if message == self._last_status_message:
@@ -287,6 +289,21 @@ class SeverusAIRuntime(QObject):
             return "Ready"
         return None
 
+    def _notify_user(
+        self,
+        text: str,
+        icon: QSystemTrayIcon.MessageIcon,
+        timeout_ms: int,
+        always: bool = False,
+    ) -> None:
+        # Frequent info popups are disruptive with screen readers; only surface key events.
+        if not always and icon == QSystemTrayIcon.MessageIcon.Information:
+            return
+        if text == self._last_notification_message:
+            return
+        self._last_notification_message = text
+        self._tray.showMessage(APP_NAME, text, icon, timeout_ms)
+
     def _on_tray_activated(self, reason: QSystemTrayIcon.ActivationReason) -> None:
         if reason in (QSystemTrayIcon.ActivationReason.Trigger, QSystemTrayIcon.ActivationReason.DoubleClick):
             self._window.showNormal()
@@ -312,6 +329,12 @@ class SeverusAIRuntime(QObject):
             self._config.activation_hotkey = DEFAULT_ACTIVATION_HOTKEY
             self._hotkey.set_activation_hotkey(self._config.activation_hotkey)
             self._config_store.save(self._config)
+        try:
+            self._hotkey.set_read_hotkey(self._config.read_hotkey)
+        except ValueError:
+            self._config.read_hotkey = DEFAULT_READ_HOTKEY
+            self._hotkey.set_read_hotkey(self._config.read_hotkey)
+            self._config_store.save(self._config)
 
     def _refresh_model_cache_list(self) -> None:
         self._model_cache_refresh_generation += 1
@@ -321,14 +344,14 @@ class SeverusAIRuntime(QObject):
         worker.start()
 
     def _load_model_cache_entries(self, generation: int) -> None:
-        rows: list[tuple[str, str]] = []
+        rows: list[tuple[str, str, str, bool]] = []
         error = ""
         try:
             models = list_cached_models(self._model_cache_dir)
             for item in models:
                 status = "ready" if item.ready else "incomplete"
                 label = f"{item.model_name} ({format_size(item.size_bytes)}, {status})"
-                rows.append((label, item.folder_name))
+                rows.append((label, item.folder_name, item.model_name, item.ready))
         except Exception as exc:
             LOGGER.exception("Cached model refresh failed")
             error = str(exc)
@@ -338,7 +361,12 @@ class SeverusAIRuntime(QObject):
         generation, rows, error = payload
         if generation != self._model_cache_refresh_generation:
             return
+        ready_map: dict[str, bool] = {}
+        for _, _, model_name, ready in rows:
+            ready_map[model_name] = ready
+        self._model_ready_map = ready_map
         self._window.set_model_cache_entries(rows)
+        self._window.set_model_choices_availability(self._model_ready_map, self._config.model_name)
         self._window.set_model_cache_refreshing(False)
         if error:
             self._set_status(f"Unable to refresh cached model list ({error}).")

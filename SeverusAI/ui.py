@@ -27,10 +27,11 @@ class SettingsWindow(QMainWindow):
     model_cache_refresh_requested = Signal()
     model_cache_delete_requested = Signal(str)
     hotkey_apply_requested = Signal(str)
+    read_hotkey_apply_requested = Signal(str)
     word_bank_save_requested = Signal(object)
     dictation_toggle_requested = Signal()
 
-    def __init__(self, initial_model: str, initial_hotkey: str) -> None:
+    def __init__(self, initial_model: str, initial_hotkey: str, initial_read_hotkey: str) -> None:
         super().__init__()
         self.setWindowTitle("Severus AI Settings")
         self.resize(820, 760)
@@ -156,9 +157,17 @@ class SettingsWindow(QMainWindow):
         credit.setAccessibleName("Application credit")
         hero_layout.addWidget(credit)
 
+        hero_actions = QHBoxLayout()
+        self.settings_toggle_button = QPushButton("Show Advanced Settings")
+        self.settings_toggle_button.setAccessibleName("Toggle advanced settings")
+        self.settings_toggle_button.clicked.connect(self._toggle_advanced_settings)
+        hero_actions.addWidget(self.settings_toggle_button)
+        hero_actions.addStretch(1)
+        hero_layout.addLayout(hero_actions)
+
         body_layout.addWidget(hero_card)
 
-        hotkey_group = QGroupBox("Hotkey")
+        hotkey_group = QGroupBox("Hotkeys")
         hotkey_group.setAccessibleName("Hotkey settings")
         hotkey_form = QFormLayout(hotkey_group)
         self.hotkey_modifier_combo = QComboBox()
@@ -189,14 +198,40 @@ class SettingsWindow(QMainWindow):
         self.hotkey_value.setAccessibleName("Current activation hotkey")
         self.hotkey_value.setAccessibleDescription("Current active dictation hotkey.")
 
-        self.read_hotkey_value = QLineEdit("Ctrl+F8 (Read last transcript)")
+        self.read_hotkey_modifier_combo = QComboBox()
+        self.read_hotkey_modifier_combo.setAccessibleName("Read aloud hotkey modifier")
+        self.read_hotkey_modifier_combo.addItem("Ctrl", "ctrl")
+        self.read_hotkey_modifier_combo.addItem("Alt", "alt")
+        self.read_hotkey_modifier_combo.addItem("Shift", "shift")
+        self.read_hotkey_modifier_combo.addItem("Ctrl+Alt", "ctrl+alt")
+        self.read_hotkey_modifier_combo.addItem("Ctrl+Shift", "ctrl+shift")
+        self.read_hotkey_modifier_combo.addItem("Alt+Shift", "alt+shift")
+        self.read_hotkey_modifier_combo.addItem("Ctrl+Alt+Shift", "ctrl+alt+shift")
+
+        self.read_hotkey_key_combo = QComboBox()
+        self.read_hotkey_key_combo.setAccessibleName("Read aloud hotkey key")
+        for i in range(1, 13):
+            self.read_hotkey_key_combo.addItem(f"F{i}", f"f{i}")
+        for ch in "ABCDEFGHIJKLMNOPQRSTUVWXYZ":
+            self.read_hotkey_key_combo.addItem(ch, ch.lower())
+        for digit in "0123456789":
+            self.read_hotkey_key_combo.addItem(digit, digit)
+
+        self.read_hotkey_apply_button = QPushButton("Apply Read Hotkey")
+        self.read_hotkey_apply_button.setAccessibleName("Apply read aloud hotkey")
+        self.read_hotkey_apply_button.clicked.connect(self._emit_read_hotkey_apply_requested)
+
+        self.read_hotkey_value = QLineEdit("")
         self.read_hotkey_value.setReadOnly(True)
-        self.read_hotkey_value.setAccessibleName("Read aloud hotkey")
+        self.read_hotkey_value.setAccessibleName("Current read aloud hotkey")
 
         hotkey_form.addRow("Modifier:", self.hotkey_modifier_combo)
         hotkey_form.addRow("Key:", self.hotkey_key_combo)
         hotkey_form.addRow("", self.hotkey_apply_button)
         hotkey_form.addRow("Current activation:", self.hotkey_value)
+        hotkey_form.addRow("Read modifier:", self.read_hotkey_modifier_combo)
+        hotkey_form.addRow("Read key:", self.read_hotkey_key_combo)
+        hotkey_form.addRow("", self.read_hotkey_apply_button)
         hotkey_form.addRow("Read aloud:", self.read_hotkey_value)
         body_layout.addWidget(hotkey_group)
 
@@ -226,6 +261,10 @@ class SettingsWindow(QMainWindow):
         self.model_status_value.setReadOnly(True)
         self.model_status_value.setAccessibleName("Model status")
         model_form.addRow("Model status:", self.model_status_value)
+        self.active_model_value = QLineEdit(initial_model)
+        self.active_model_value.setReadOnly(True)
+        self.active_model_value.setAccessibleName("Active model")
+        model_form.addRow("Active model:", self.active_model_value)
         model_help = QLabel("Model changes apply immediately. Restart is not required.")
         model_help.setWordWrap(True)
         model_help.setAccessibleName("Model change help")
@@ -348,12 +387,22 @@ class SettingsWindow(QMainWindow):
 
         body_layout.addStretch(1)
         self.setCentralWidget(central)
+        for button in self.findChildren(QPushButton):
+            button.setAutoDefault(True)
+            button.setDefault(False)
 
+        self._advanced_visible = False
+        self._advanced_groups = [storage_group, dictionary_group]
         self.set_hotkey_value(initial_hotkey)
+        self.set_read_hotkey_value(initial_read_hotkey)
+        self._set_advanced_groups_visible(False)
 
         self.setTabOrder(self.hotkey_modifier_combo, self.hotkey_key_combo)
         self.setTabOrder(self.hotkey_key_combo, self.hotkey_apply_button)
-        self.setTabOrder(self.hotkey_apply_button, self.model_combo)
+        self.setTabOrder(self.hotkey_apply_button, self.read_hotkey_modifier_combo)
+        self.setTabOrder(self.read_hotkey_modifier_combo, self.read_hotkey_key_combo)
+        self.setTabOrder(self.read_hotkey_key_combo, self.read_hotkey_apply_button)
+        self.setTabOrder(self.read_hotkey_apply_button, self.model_combo)
         self.setTabOrder(self.model_combo, self.apply_model_button)
         self.setTabOrder(self.apply_model_button, self.model_cache_list)
         self.setTabOrder(self.model_cache_list, self.model_cache_refresh_button)
@@ -411,14 +460,50 @@ class SettingsWindow(QMainWindow):
         if key_index >= 0:
             self.hotkey_key_combo.setCurrentIndex(key_index)
 
+    def set_read_hotkey_value(self, hotkey_text: str) -> None:
+        self.read_hotkey_value.setText(hotkey_text)
+        self.read_hotkey_value.setCursorPosition(0)
+        parts = hotkey_text.lower().split("+")
+        if len(parts) < 2:
+            return
+        modifier = "+".join(parts[:-1])
+        key = parts[-1]
+        modifier_index = self.read_hotkey_modifier_combo.findData(modifier)
+        if modifier_index >= 0:
+            self.read_hotkey_modifier_combo.setCurrentIndex(modifier_index)
+        key_index = self.read_hotkey_key_combo.findData(key)
+        if key_index >= 0:
+            self.read_hotkey_key_combo.setCurrentIndex(key_index)
+
     def set_model_status(self, text: str) -> None:
         self.model_status_value.setText(text)
         self.model_status_value.setCursorPosition(0)
+
+    def set_active_model(self, model_name: str) -> None:
+        self.active_model_value.setText(model_name)
+        self.active_model_value.setCursorPosition(0)
 
     def set_model_value(self, model_name: str) -> None:
         index = self.model_combo.findData(model_name)
         if index >= 0:
             self.model_combo.setCurrentIndex(index)
+
+    def set_model_choices_availability(self, ready_map: dict[str, bool], active_model: str) -> None:
+        for i in range(self.model_combo.count()):
+            model_name = str(self.model_combo.itemData(i))
+            label = model_name
+            is_ready = ready_map.get(model_name, False)
+            if model_name == active_model:
+                label = f"{model_name} (active)"
+                is_ready = True
+            elif is_ready:
+                label = f"{model_name} (ready)"
+            else:
+                label = f"{model_name} (not ready)"
+            self.model_combo.setItemText(i, label)
+            model_item = self.model_combo.model().item(i)
+            if model_item is not None:
+                model_item.setEnabled(is_ready or model_name == active_model)
 
     def set_model_cache_refreshing(self, refreshing: bool) -> None:
         self.model_cache_refresh_button.setEnabled(not refreshing)
@@ -434,9 +519,9 @@ class SettingsWindow(QMainWindow):
         for wrong, right in entries:
             self.word_bank_list.addItem(f"{wrong} -> {right}")
 
-    def set_model_cache_entries(self, entries: list[tuple[str, str]]) -> None:
+    def set_model_cache_entries(self, entries: list[tuple[str, str, str, bool]]) -> None:
         self.model_cache_list.clear()
-        for label, folder_name in entries:
+        for label, folder_name, _, _ in entries:
             item = QListWidgetItem(label)
             item.setData(Qt.UserRole, folder_name)
             self.model_cache_list.addItem(item)
@@ -449,6 +534,11 @@ class SettingsWindow(QMainWindow):
         modifier = str(self.hotkey_modifier_combo.currentData())
         key = str(self.hotkey_key_combo.currentData())
         self.hotkey_apply_requested.emit(f"{modifier}+{key}")
+
+    def _emit_read_hotkey_apply_requested(self) -> None:
+        modifier = str(self.read_hotkey_modifier_combo.currentData())
+        key = str(self.read_hotkey_key_combo.currentData())
+        self.read_hotkey_apply_requested.emit(f"{modifier}+{key}")
 
     def _emit_dictation_toggle_requested(self) -> None:
         self.dictation_toggle_requested.emit()
@@ -499,6 +589,15 @@ class SettingsWindow(QMainWindow):
         left, right = text.split("->", 1)
         self.word_bank_heard_input.setText(left.strip())
         self.word_bank_correct_input.setText(right.strip())
+
+    def _toggle_advanced_settings(self) -> None:
+        self._set_advanced_groups_visible(not self._advanced_visible)
+
+    def _set_advanced_groups_visible(self, visible: bool) -> None:
+        self._advanced_visible = visible
+        for group in self._advanced_groups:
+            group.setVisible(visible)
+        self.settings_toggle_button.setText("Hide Advanced Settings" if visible else "Show Advanced Settings")
 
     def showEvent(self, event) -> None:  # noqa: ANN001
         super().showEvent(event)

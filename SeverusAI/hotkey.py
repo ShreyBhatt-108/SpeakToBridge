@@ -65,8 +65,9 @@ class HoldHotkeyListener(QObject):
         self._listener: keyboard.Listener | None = None
         self._pressed_modifiers: Set[str] = set()
         self._activation_spec = parse_hotkey_spec("ctrl+f9")
+        self._read_spec = parse_hotkey_spec("ctrl+f8")
         self._activation_down = False
-        self._f8_down = False
+        self._read_down = False
 
     @property
     def activation_hotkey_display(self) -> str:
@@ -76,6 +77,16 @@ class HoldHotkeyListener(QObject):
         parsed = parse_hotkey_spec(spec_text)
         self._activation_spec = parsed
         self._activation_down = False
+        return parsed.display
+
+    @property
+    def read_hotkey_display(self) -> str:
+        return self._read_spec.display
+
+    def set_read_hotkey(self, spec_text: str) -> str:
+        parsed = parse_hotkey_spec(spec_text)
+        self._read_spec = parsed
+        self._read_down = False
         return parsed.display
 
     def start(self) -> None:
@@ -109,8 +120,8 @@ class HoldHotkeyListener(QObject):
             self.hotkey_pressed.emit()
             return
 
-        if key == keyboard.Key.f8 and "ctrl" in self._pressed_modifiers and not self._f8_down:
-            self._f8_down = True
+        if self._matches_read(key) and not self._read_down:
+            self._read_down = True
             self.read_hotkey_pressed.emit()
 
     def _on_release(self, key) -> None:  # noqa: ANN001
@@ -124,8 +135,8 @@ class HoldHotkeyListener(QObject):
             self.hotkey_released.emit()
             return
 
-        if key == keyboard.Key.f8 and self._f8_down:
-            self._f8_down = False
+        if self._matches_read(key) and self._read_down:
+            self._read_down = False
 
     @staticmethod
     def _key_to_modifier(key) -> str | None:  # noqa: ANN001
@@ -142,6 +153,17 @@ class HoldHotkeyListener(QObject):
             return False
 
         token = self._activation_spec.key_token
+        if token.startswith("f"):
+            expected = getattr(keyboard.Key, token, None)
+            return key == expected
+        if isinstance(key, keyboard.KeyCode) and key.char is not None:
+            return key.char.lower() == token
+        return False
+
+    def _matches_read(self, key) -> bool:  # noqa: ANN001
+        if self._read_spec.modifiers != frozenset(self._pressed_modifiers):
+            return False
+        token = self._read_spec.key_token
         if token.startswith("f"):
             expected = getattr(keyboard.Key, token, None)
             return key == expected
