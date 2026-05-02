@@ -143,23 +143,22 @@ class SettingsWindow(QMainWindow):
 
         title = QLabel("Severus AI")
         title.setObjectName("titleLabel")
-        title.setAccessibleName("Application title")
         hero_layout.addWidget(title)
 
         subtitle = QLabel("Local Whisper dictation with a keyboard-first, screen-reader-ready interface.")
         subtitle.setObjectName("subtitleLabel")
         subtitle.setWordWrap(True)
-        subtitle.setAccessibleName("Application subtitle")
         hero_layout.addWidget(subtitle)
 
         credit = QLabel(f"Created by {APP_AUTHOR}")
         credit.setObjectName("subtitleLabel")
-        credit.setAccessibleName("Application credit")
         hero_layout.addWidget(credit)
 
         hero_actions = QHBoxLayout()
-        self.settings_toggle_button = QPushButton("Show Advanced Settings")
-        self.settings_toggle_button.setAccessibleName("Toggle advanced settings")
+        self.settings_toggle_button = QPushButton("Show More Settings")
+        self.settings_toggle_button.setCheckable(True)
+        self.settings_toggle_button.setAccessibleName("Show more settings")
+        self.settings_toggle_button.setAccessibleDescription("Press Space or Enter to show or hide settings that are not needed for normal dictation.")
         self.settings_toggle_button.clicked.connect(self._toggle_advanced_settings)
         hero_actions.addWidget(self.settings_toggle_button)
         hero_actions.addStretch(1)
@@ -252,11 +251,11 @@ class SettingsWindow(QMainWindow):
         hotkey_form.addRow("", self.read_hotkey_apply_button)
         hotkey_form.addRow("Read aloud:", self.read_hotkey_value)
         model_group = QGroupBox("Model")
-        model_group.setAccessibleName("Model settings")
+        model_group.setAccessibleName("Model")
         model_form = QFormLayout(model_group)
         self.model_combo = QComboBox()
-        self.model_combo.setAccessibleName("Whisper model")
-        self.model_combo.setAccessibleDescription("Select a model, then activate Apply Model.")
+        self.model_combo.setAccessibleName("Downloaded model")
+        self.model_combo.setAccessibleDescription("Choose an already downloaded model, then activate Apply Model.")
         self.model_combo.setFocusPolicy(Qt.StrongFocus)
         self.model_combo.setMaxVisibleItems(10)
         self.model_combo.setSizeAdjustPolicy(QComboBox.AdjustToContents)
@@ -266,7 +265,7 @@ class SettingsWindow(QMainWindow):
         index = self.model_combo.findData(initial_model)
         if index >= 0:
             self.model_combo.setCurrentIndex(index)
-        model_form.addRow("Whisper model:", self.model_combo)
+        model_form.addRow("Downloaded model:", self.model_combo)
 
         self.apply_model_button = QPushButton("Apply Model")
         self.apply_model_button.setAccessibleName("Apply selected model")
@@ -283,7 +282,6 @@ class SettingsWindow(QMainWindow):
         model_form.addRow("Active model:", self.active_model_value)
         model_help = QLabel("Model changes apply immediately. Restart is not required.")
         model_help.setWordWrap(True)
-        model_help.setAccessibleName("Model change help")
         model_form.addRow("", model_help)
         body_layout.addWidget(model_group)
         body_layout.addWidget(hotkey_group)
@@ -409,7 +407,7 @@ class SettingsWindow(QMainWindow):
             button.setDefault(False)
 
         self._advanced_visible = False
-        self._advanced_groups = [storage_group, dictionary_group]
+        self._advanced_groups = [storage_group, language_group, dictionary_group]
         self.set_hotkey_value(initial_hotkey)
         self.set_read_hotkey_value(initial_read_hotkey)
         self._set_advanced_groups_visible(False)
@@ -465,8 +463,12 @@ class SettingsWindow(QMainWindow):
     def set_dictation_enabled(self, enabled: bool) -> None:
         if enabled:
             self.dictation_toggle_button.setText("Disable Dictation")
+            self.dictation_toggle_button.setAccessibleName("Disable dictation")
+            self.dictation_toggle_button.setAccessibleDescription("Turns Severus dictation shortcuts off.")
         else:
             self.dictation_toggle_button.setText("Enable Dictation")
+            self.dictation_toggle_button.setAccessibleName("Enable dictation")
+            self.dictation_toggle_button.setAccessibleDescription("Turns Severus dictation shortcuts on.")
 
     def set_hotkey_value(self, hotkey_text: str) -> None:
         self.hotkey_value.setText(hotkey_text)
@@ -618,9 +620,11 @@ class SettingsWindow(QMainWindow):
 
     def _set_advanced_groups_visible(self, visible: bool) -> None:
         self._advanced_visible = visible
+        self.settings_toggle_button.setChecked(visible)
         for group in self._advanced_groups:
             group.setVisible(visible)
-        self.settings_toggle_button.setText("Hide Advanced Settings" if visible else "Show Advanced Settings")
+        self.settings_toggle_button.setText("Hide More Settings" if visible else "Show More Settings")
+        self.settings_toggle_button.setAccessibleName("Hide more settings" if visible else "Show more settings")
 
     def showEvent(self, event) -> None:  # noqa: ANN001
         super().showEvent(event)

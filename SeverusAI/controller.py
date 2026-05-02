@@ -52,6 +52,7 @@ class DictationController(QObject):
         self._is_busy = False
         self._is_preloading = False
         self._last_transcript = ""
+        self._enabled = True
 
     @property
     def is_busy(self) -> bool:
@@ -67,6 +68,9 @@ class DictationController(QObject):
     def is_recording(self) -> bool:
         return self._recorder.is_recording
 
+    def set_enabled(self, enabled: bool) -> None:
+        self._enabled = enabled
+
     def set_model(self, model_name: str) -> None:
         self._engine.update_model(model_name)
 
@@ -81,6 +85,9 @@ class DictationController(QObject):
         worker.start()
 
     def start_recording(self) -> None:
+        if not self._enabled:
+            self.status_changed.emit("Dictation is disabled.")
+            return
         if self.is_preloading:
             self.status_changed.emit("Model is still preparing. Please wait for model ready.")
             return
@@ -127,6 +134,9 @@ class DictationController(QObject):
         self.status_changed.emit("Recording canceled.")
 
     def read_last_transcript_aloud(self) -> None:
+        if not self._enabled:
+            self.status_changed.emit("Dictation is disabled.")
+            return
         text = self._last_transcript.strip()
         if not text:
             self.status_changed.emit("No dictated text available to read aloud yet.")
@@ -143,6 +153,9 @@ class DictationController(QObject):
             text = self._finalize_transcript(text)
             if not text:
                 self.status_changed.emit("No speech detected.")
+                return
+            if not self._enabled:
+                self.status_changed.emit("Dictation disabled. Transcript was not inserted.")
                 return
             self._last_transcript = text
             self.status_changed.emit("Model ready. Transcript captured.")

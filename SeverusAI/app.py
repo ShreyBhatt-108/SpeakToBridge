@@ -61,6 +61,7 @@ class SeverusAIRuntime(QObject):
         self._refresh_model_cache_list()
         self._window.set_word_stats(last_words=0, total_words=0, total_clips=0)
         self._window.set_dictation_enabled(True)
+        self._controller.set_enabled(True)
         self._window.set_model_status("Ready")
         self._window.set_active_model(self._config.model_name)
         self._set_status(f"Ready. Press {self._hotkey.activation_hotkey_display} to start or stop dictation.")
@@ -99,7 +100,7 @@ class SeverusAIRuntime(QObject):
         self._window.word_bank_save_requested.connect(self._on_word_bank_save_requested)
         self._window.dictation_toggle_requested.connect(self._toggle_dictation)
         self._hotkey.hotkey_pressed.connect(self._on_hotkey_pressed)
-        self._hotkey.read_hotkey_pressed.connect(self._controller.read_last_transcript_aloud)
+        self._hotkey.read_hotkey_pressed.connect(self._on_read_hotkey_pressed)
         self._hotkey.listener_error.connect(self._on_error)
 
         self._controller.status_changed.connect(self._set_status)
@@ -160,6 +161,7 @@ class SeverusAIRuntime(QObject):
     def _toggle_dictation(self) -> None:
         self._dictation_enabled = not self._dictation_enabled
         if self._dictation_enabled:
+            self._controller.set_enabled(True)
             self._hotkey.start()
             self._toggle_dictation_action.setText("Disable Dictation")
             self._window.set_dictation_enabled(True)
@@ -167,6 +169,7 @@ class SeverusAIRuntime(QObject):
                 f"Dictation enabled. Press {self._hotkey.activation_hotkey_display} to start or stop dictation."
             )
         else:
+            self._controller.set_enabled(False)
             if self._controller.is_recording:
                 self._controller.cancel_recording()
             self._hotkey.stop()
@@ -238,10 +241,21 @@ class SeverusAIRuntime(QObject):
             self._on_error(f"Unable to delete selected cached model ({exc}).")
 
     def _on_hotkey_pressed(self) -> None:
+        if not self._dictation_enabled:
+            self._set_status(
+                f"Dictation disabled. {self._hotkey.activation_hotkey_display} will not start recording."
+            )
+            return
         if self._controller.is_recording:
             self._controller.stop_recording_and_transcribe()
             return
         self._controller.start_recording()
+
+    def _on_read_hotkey_pressed(self) -> None:
+        if not self._dictation_enabled:
+            self._set_status("Dictation disabled. Read-aloud shortcut will not run.")
+            return
+        self._controller.read_last_transcript_aloud()
 
     def _on_transcript_ready(self, text: str) -> None:
         words = self._count_words(text)

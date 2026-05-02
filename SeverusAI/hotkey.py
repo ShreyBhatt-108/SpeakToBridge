@@ -110,6 +110,9 @@ class HoldHotkeyListener(QObject):
     def stop(self) -> None:
         listener = self._listener
         self._listener = None
+        self._pressed_modifiers.clear()
+        self._activation_down = False
+        self._read_down = False
         if listener is not None:
             listener.stop()
 
@@ -152,6 +155,9 @@ class HoldHotkeyListener(QObject):
             return "shift"
         if key in (keyboard.Key.cmd, keyboard.Key.cmd_l, keyboard.Key.cmd_r):
             return "win"
+        vk = getattr(key, "vk", None)
+        if vk in (91, 92):
+            return "win"
         return None
 
     def _matches_activation(self, key) -> bool:  # noqa: ANN001
@@ -163,7 +169,7 @@ class HoldHotkeyListener(QObject):
             expected = getattr(keyboard.Key, token, None)
             return key == expected
         if token == "win":
-            return key in (keyboard.Key.cmd, keyboard.Key.cmd_l, keyboard.Key.cmd_r)
+            return self._key_to_modifier(key) == "win"
         if isinstance(key, keyboard.KeyCode) and key.char is not None:
             return key.char.lower() == token
         return False
@@ -176,7 +182,7 @@ class HoldHotkeyListener(QObject):
             expected = getattr(keyboard.Key, token, None)
             return key == expected
         if token == "win":
-            return key in (keyboard.Key.cmd, keyboard.Key.cmd_l, keyboard.Key.cmd_r)
+            return self._key_to_modifier(key) == "win"
         if isinstance(key, keyboard.KeyCode) and key.char is not None:
             return key.char.lower() == token
         return False
