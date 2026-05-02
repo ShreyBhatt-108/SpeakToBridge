@@ -148,7 +148,7 @@ class DictationController(QObject):
     def _transcribe_and_insert(self, audio) -> None:  # noqa: ANN001
         try:
             self.status_changed.emit("Model ready check in progress...")
-            text = self._engine.transcribe(audio)
+            text = self._engine.transcribe(audio, initial_prompt=self._word_bank.glossary_prompt())
             text = self._word_bank.apply(text)
             text = self._finalize_transcript(text)
             if not text:

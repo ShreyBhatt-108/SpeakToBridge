@@ -4,7 +4,6 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QComboBox,
     QFormLayout,
-    QFrame,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -19,7 +18,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .constants import APP_AUTHOR, MODEL_CHOICES
+from .constants import MODEL_CHOICES
 
 
 class SettingsWindow(QMainWindow):
@@ -107,11 +106,6 @@ class SettingsWindow(QMainWindow):
             QPushButton:focus {
                 border: 2px solid #0e639c;
             }
-            QFrame#heroCard {
-                border: 1px solid #c9dbf0;
-                border-radius: 16px;
-                background: #ffffff;
-            }
             QScrollArea {
                 border: none;
                 background: transparent;
@@ -134,37 +128,6 @@ class SettingsWindow(QMainWindow):
         body_layout.setSpacing(12)
         scroll.setWidget(body)
         root_layout.addWidget(scroll)
-
-        hero_card = QFrame()
-        hero_card.setObjectName("heroCard")
-        hero_layout = QVBoxLayout(hero_card)
-        hero_layout.setContentsMargins(16, 14, 16, 14)
-        hero_layout.setSpacing(6)
-
-        title = QLabel("Severus AI")
-        title.setObjectName("titleLabel")
-        hero_layout.addWidget(title)
-
-        subtitle = QLabel("Local Whisper dictation with a keyboard-first, screen-reader-ready interface.")
-        subtitle.setObjectName("subtitleLabel")
-        subtitle.setWordWrap(True)
-        hero_layout.addWidget(subtitle)
-
-        credit = QLabel(f"Created by {APP_AUTHOR}")
-        credit.setObjectName("subtitleLabel")
-        hero_layout.addWidget(credit)
-
-        hero_actions = QHBoxLayout()
-        self.settings_toggle_button = QPushButton("Show More Settings")
-        self.settings_toggle_button.setCheckable(True)
-        self.settings_toggle_button.setAccessibleName("Show more settings")
-        self.settings_toggle_button.setAccessibleDescription("Press Space or Enter to show or hide settings that are not needed for normal dictation.")
-        self.settings_toggle_button.clicked.connect(self._toggle_advanced_settings)
-        hero_actions.addWidget(self.settings_toggle_button)
-        hero_actions.addStretch(1)
-        hero_layout.addLayout(hero_actions)
-
-        body_layout.addWidget(hero_card)
 
         hotkey_group = QGroupBox("Hotkeys")
         hotkey_group.setAccessibleName("Hotkey settings")
@@ -388,6 +351,11 @@ class SettingsWindow(QMainWindow):
         action_group = QGroupBox("Window")
         action_group.setAccessibleName("Window controls")
         action_layout = QHBoxLayout(action_group)
+        self.settings_toggle_button = QPushButton("Show More Settings")
+        self.settings_toggle_button.setAccessibleName("Show more settings")
+        self.settings_toggle_button.setAccessibleDescription("Press Space or Enter to show or hide settings that are not needed for normal dictation.")
+        self.settings_toggle_button.clicked.connect(self._toggle_advanced_settings)
+        action_layout.addWidget(self.settings_toggle_button)
         self.dictation_toggle_button = QPushButton("Disable Dictation")
         self.dictation_toggle_button.setAccessibleName("Toggle dictation")
         self.dictation_toggle_button.setAccessibleDescription("Enable or disable Ctrl+F9 dictation globally.")
@@ -439,7 +407,8 @@ class SettingsWindow(QMainWindow):
         self.setTabOrder(self.last_words_value, self.total_words_value)
         self.setTabOrder(self.total_words_value, self.total_clips_value)
         self.setTabOrder(self.total_clips_value, self.status_value)
-        self.setTabOrder(self.status_value, self.dictation_toggle_button)
+        self.setTabOrder(self.status_value, self.settings_toggle_button)
+        self.setTabOrder(self.settings_toggle_button, self.dictation_toggle_button)
         self.setTabOrder(self.dictation_toggle_button, self.close_to_tray_button)
         self.model_combo.setFocus()
 
@@ -620,7 +589,6 @@ class SettingsWindow(QMainWindow):
 
     def _set_advanced_groups_visible(self, visible: bool) -> None:
         self._advanced_visible = visible
-        self.settings_toggle_button.setChecked(visible)
         for group in self._advanced_groups:
             group.setVisible(visible)
         self.settings_toggle_button.setText("Hide More Settings" if visible else "Show More Settings")

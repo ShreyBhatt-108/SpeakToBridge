@@ -133,17 +133,22 @@ class WhisperEngine:
     def warm_model(self) -> None:
         self._ensure_model()
 
-    def transcribe(self, audio: np.ndarray) -> str:
+    def transcribe(self, audio: np.ndarray, initial_prompt: str = "") -> str:
         if audio.size == 0:
             return ""
         self._ensure_model()
         assert self._model is not None
+        options = {
+            "language": self._language,
+            "vad_filter": True,
+            "vad_parameters": {"min_silence_duration_ms": 200},
+            "beam_size": 5,
+        }
+        if initial_prompt:
+            options["initial_prompt"] = initial_prompt
         segments, _info = self._model.transcribe(
             audio,
-            language=self._language,
-            vad_filter=True,
-            vad_parameters={"min_silence_duration_ms": 200},
-            beam_size=5,
+            **options,
         )
         text = " ".join(segment.text.strip() for segment in segments).strip()
         return text

@@ -147,9 +147,9 @@ class HoldHotkeyListener(QObject):
 
     @staticmethod
     def _key_to_modifier(key) -> str | None:  # noqa: ANN001
-        if key in (keyboard.Key.ctrl_l, keyboard.Key.ctrl_r):
+        if key in (keyboard.Key.ctrl, keyboard.Key.ctrl_l, keyboard.Key.ctrl_r):
             return "ctrl"
-        if key in (keyboard.Key.alt_l, keyboard.Key.alt_r, keyboard.Key.alt_gr):
+        if key in (keyboard.Key.alt, keyboard.Key.alt_l, keyboard.Key.alt_r, keyboard.Key.alt_gr):
             return "alt"
         if key in (keyboard.Key.shift, keyboard.Key.shift_l, keyboard.Key.shift_r):
             return "shift"
