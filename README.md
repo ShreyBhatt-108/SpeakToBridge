@@ -39,7 +39,8 @@ This update focuses on making everyday dictation use more reliable and less conf
   - when dictation is off, dictation and read-aloud shortcuts stay off
   - prevents late transcript insertion after dictation has been disabled
 - Exit behavior is clearer:
-  - when users close the settings window with `Alt+F4`, Severus exits instead of lingering in a confusing in-between state
+  - `Alt+F4` on the settings window minimizes Severus AI to tray
+  - the settings window now includes a dedicated `Quit Severus AI` button that fully shuts down the program
 - Word Bank behavior is smarter:
   - keeps exact replacements
   - adds local fuzzy matching for near-miss words/phrases

@@ -29,6 +29,7 @@ class SettingsWindow(QMainWindow):
     read_hotkey_apply_requested = Signal(str)
     word_bank_save_requested = Signal(object)
     dictation_toggle_requested = Signal()
+    quit_requested = Signal()
 
     def __init__(self, initial_model: str, initial_hotkey: str, initial_read_hotkey: str) -> None:
         super().__init__()
@@ -358,9 +359,14 @@ class SettingsWindow(QMainWindow):
         self.dictation_toggle_button.setAccessibleDescription("Enable or disable Ctrl+F9 dictation globally.")
         self.dictation_toggle_button.clicked.connect(self._emit_dictation_toggle_requested)
         action_layout.addWidget(self.dictation_toggle_button)
-        self.close_to_tray_button = QPushButton("Close to Tray")
+        self.quit_button = QPushButton("Quit Severus AI (Shuts Down Program)")
+        self.quit_button.setAccessibleName("Quit Severus AI")
+        self.quit_button.setAccessibleDescription("This button shuts down the program.")
+        self.quit_button.clicked.connect(self.quit_requested.emit)
+        action_layout.addWidget(self.quit_button)
+        self.close_to_tray_button = QPushButton("Close Settings (Minimizes Severus AI to Tray)")
         self.close_to_tray_button.setAccessibleName("Close settings to tray")
-        self.close_to_tray_button.setAccessibleDescription("Hides this settings window and keeps the app in the system tray.")
+        self.close_to_tray_button.setAccessibleDescription("This button minimizes Severus AI to tray.")
         self.close_to_tray_button.clicked.connect(self.hide)
         action_layout.addWidget(self.close_to_tray_button)
         body_layout.addWidget(action_group)
@@ -410,7 +416,8 @@ class SettingsWindow(QMainWindow):
         self.word_bank_list.setWrapping(False)
         self.word_bank_list.setWordWrap(False)
         self.setTabOrder(self.word_bank_save_button, self.dictation_toggle_button)
-        self.setTabOrder(self.dictation_toggle_button, self.close_to_tray_button)
+        self.setTabOrder(self.dictation_toggle_button, self.quit_button)
+        self.setTabOrder(self.quit_button, self.close_to_tray_button)
         self.model_combo.setFocus()
 
     def set_status(self, message: str) -> None:

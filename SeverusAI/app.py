@@ -99,6 +99,7 @@ class SeverusAIRuntime(QObject):
         self._window.read_hotkey_apply_requested.connect(self._on_read_hotkey_changed)
         self._window.word_bank_save_requested.connect(self._on_word_bank_save_requested)
         self._window.dictation_toggle_requested.connect(self._toggle_dictation)
+        self._window.quit_requested.connect(self.shutdown)
         self._hotkey.hotkey_pressed.connect(self._on_hotkey_pressed)
         self._hotkey.read_hotkey_pressed.connect(self._on_read_hotkey_pressed)
         self._hotkey.listener_error.connect(self._on_error)
