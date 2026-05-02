@@ -28,6 +28,8 @@ def parse_hotkey_spec(spec: str) -> HotkeySpec:
         "control": "ctrl",
         "alt": "alt",
         "shift": "shift",
+        "win": "win",
+        "windows": "win",
     }
     modifiers: set[str] = set()
     for token in raw_parts[:-1]:
@@ -39,17 +41,19 @@ def parse_hotkey_spec(spec: str) -> HotkeySpec:
         raise ValueError("Hotkey must include at least one modifier.")
 
     key_token = raw_parts[-1]
-    if key_token.startswith("f") and key_token[1:].isdigit():
+    if key_token in ("win", "windows"):
+        key_token = "win"
+    elif key_token.startswith("f") and key_token[1:].isdigit():
         fn = int(key_token[1:])
         if fn < 1 or fn > 12:
             raise ValueError("Function key must be between F1 and F12.")
     elif len(key_token) == 1 and key_token.isalnum():
         pass
     else:
-        raise ValueError("Key must be F1-F12, A-Z, or 0-9.")
+        raise ValueError("Key must be F1-F12, Windows key, A-Z, or 0-9.")
 
-    ordered_modifiers = [m for m in ("ctrl", "alt", "shift") if m in modifiers]
-    label_map = {"ctrl": "Ctrl", "alt": "Alt", "shift": "Shift"}
+    ordered_modifiers = [m for m in ("ctrl", "alt", "shift", "win") if m in modifiers]
+    label_map = {"ctrl": "Ctrl", "alt": "Alt", "shift": "Shift", "win": "Win"}
     display = "+".join([label_map[m] for m in ordered_modifiers] + [key_token.upper()])
     return HotkeySpec(modifiers=frozenset(modifiers), key_token=key_token, display=display)
 
@@ -146,6 +150,8 @@ class HoldHotkeyListener(QObject):
             return "alt"
         if key in (keyboard.Key.shift, keyboard.Key.shift_l, keyboard.Key.shift_r):
             return "shift"
+        if key in (keyboard.Key.cmd, keyboard.Key.cmd_l, keyboard.Key.cmd_r):
+            return "win"
         return None
 
     def _matches_activation(self, key) -> bool:  # noqa: ANN001
@@ -156,6 +162,8 @@ class HoldHotkeyListener(QObject):
         if token.startswith("f"):
             expected = getattr(keyboard.Key, token, None)
             return key == expected
+        if token == "win":
+            return key in (keyboard.Key.cmd, keyboard.Key.cmd_l, keyboard.Key.cmd_r)
         if isinstance(key, keyboard.KeyCode) and key.char is not None:
             return key.char.lower() == token
         return False
@@ -167,6 +175,8 @@ class HoldHotkeyListener(QObject):
         if token.startswith("f"):
             expected = getattr(keyboard.Key, token, None)
             return key == expected
+        if token == "win":
+            return key in (keyboard.Key.cmd, keyboard.Key.cmd_l, keyboard.Key.cmd_r)
         if isinstance(key, keyboard.KeyCode) and key.char is not None:
             return key.char.lower() == token
         return False

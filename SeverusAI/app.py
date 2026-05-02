@@ -112,24 +112,24 @@ class SeverusAIRuntime(QObject):
     def _on_model_changed(self, model_name: str) -> None:
         if not self._model_ready_map.get(model_name, False):
             self._set_status(f"Model '{model_name}' is not ready yet. Wait for download/preparation to complete.")
-            self._window.focus_status()
+            self._window.focus_model_status()
             return
         if model_name == self._config.model_name:
             self._set_status(f"Model unchanged: {model_name}.")
-            self._window.focus_status()
+            self._window.focus_model_status()
             return
         if self._controller.is_recording:
             self._set_status("Stop recording before changing model.")
-            self._window.focus_status()
+            self._window.focus_model_status()
             return
         if self._controller.is_busy or self._controller.is_preloading:
             self._set_status("Please wait for transcription to finish before changing model.")
-            self._window.focus_status()
+            self._window.focus_model_status()
             return
         self._pending_model_name = model_name
         self._controller.preload_model_async(model_name)
         self._set_status(f"Model selected: {model_name}. Preparing model now...")
-        self._window.focus_status()
+        self._window.focus_model_status()
         self._notify_user(f"Model selected: {model_name}. Preparing model...", QSystemTrayIcon.MessageIcon.Information, 1600)
 
     def _on_model_preload_finished(self, model_name: str, success: bool, message: str) -> None:
@@ -217,18 +217,22 @@ class SeverusAIRuntime(QObject):
     def _on_model_cache_delete_requested(self, folder_name: str) -> None:
         if self._controller.is_preloading:
             self._set_status("Please wait for the model change to finish before deleting cached models.")
+            self._window.focus_model_status()
             return
         active_folder = f"models--Systran--faster-whisper-{self._config.model_name}"
         if folder_name == active_folder:
             self._set_status("Cannot delete the currently selected model.")
+            self._window.focus_model_status()
             return
         try:
             removed = delete_cached_model(self._model_cache_dir, folder_name)
             if removed:
                 self._refresh_model_cache_list()
                 self._set_status("Selected cached model deleted.")
+                self._window.focus_model_status()
             else:
                 self._set_status("Selected cached model was not found.")
+                self._window.focus_model_status()
         except Exception as exc:
             LOGGER.exception("Cached model delete failed")
             self._on_error(f"Unable to delete selected cached model ({exc}).")

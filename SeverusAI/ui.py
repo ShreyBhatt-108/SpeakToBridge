@@ -175,13 +175,22 @@ class SettingsWindow(QMainWindow):
         self.hotkey_modifier_combo.addItem("Ctrl", "ctrl")
         self.hotkey_modifier_combo.addItem("Alt", "alt")
         self.hotkey_modifier_combo.addItem("Shift", "shift")
+        self.hotkey_modifier_combo.addItem("Win", "win")
         self.hotkey_modifier_combo.addItem("Ctrl+Alt", "ctrl+alt")
         self.hotkey_modifier_combo.addItem("Ctrl+Shift", "ctrl+shift")
+        self.hotkey_modifier_combo.addItem("Ctrl+Win", "ctrl+win")
         self.hotkey_modifier_combo.addItem("Alt+Shift", "alt+shift")
+        self.hotkey_modifier_combo.addItem("Alt+Win", "alt+win")
+        self.hotkey_modifier_combo.addItem("Shift+Win", "shift+win")
         self.hotkey_modifier_combo.addItem("Ctrl+Alt+Shift", "ctrl+alt+shift")
+        self.hotkey_modifier_combo.addItem("Ctrl+Alt+Win", "ctrl+alt+win")
+        self.hotkey_modifier_combo.addItem("Ctrl+Shift+Win", "ctrl+shift+win")
+        self.hotkey_modifier_combo.addItem("Alt+Shift+Win", "alt+shift+win")
+        self.hotkey_modifier_combo.addItem("Ctrl+Alt+Shift+Win", "ctrl+alt+shift+win")
 
         self.hotkey_key_combo = QComboBox()
         self.hotkey_key_combo.setAccessibleName("Activation hotkey key")
+        self.hotkey_key_combo.addItem("Win", "win")
         for i in range(1, 13):
             self.hotkey_key_combo.addItem(f"F{i}", f"f{i}")
         for ch in "ABCDEFGHIJKLMNOPQRSTUVWXYZ":
@@ -203,13 +212,22 @@ class SettingsWindow(QMainWindow):
         self.read_hotkey_modifier_combo.addItem("Ctrl", "ctrl")
         self.read_hotkey_modifier_combo.addItem("Alt", "alt")
         self.read_hotkey_modifier_combo.addItem("Shift", "shift")
+        self.read_hotkey_modifier_combo.addItem("Win", "win")
         self.read_hotkey_modifier_combo.addItem("Ctrl+Alt", "ctrl+alt")
         self.read_hotkey_modifier_combo.addItem("Ctrl+Shift", "ctrl+shift")
+        self.read_hotkey_modifier_combo.addItem("Ctrl+Win", "ctrl+win")
         self.read_hotkey_modifier_combo.addItem("Alt+Shift", "alt+shift")
+        self.read_hotkey_modifier_combo.addItem("Alt+Win", "alt+win")
+        self.read_hotkey_modifier_combo.addItem("Shift+Win", "shift+win")
         self.read_hotkey_modifier_combo.addItem("Ctrl+Alt+Shift", "ctrl+alt+shift")
+        self.read_hotkey_modifier_combo.addItem("Ctrl+Alt+Win", "ctrl+alt+win")
+        self.read_hotkey_modifier_combo.addItem("Ctrl+Shift+Win", "ctrl+shift+win")
+        self.read_hotkey_modifier_combo.addItem("Alt+Shift+Win", "alt+shift+win")
+        self.read_hotkey_modifier_combo.addItem("Ctrl+Alt+Shift+Win", "ctrl+alt+shift+win")
 
         self.read_hotkey_key_combo = QComboBox()
         self.read_hotkey_key_combo.setAccessibleName("Read aloud hotkey key")
+        self.read_hotkey_key_combo.addItem("Win", "win")
         for i in range(1, 13):
             self.read_hotkey_key_combo.addItem(f"F{i}", f"f{i}")
         for ch in "ABCDEFGHIJKLMNOPQRSTUVWXYZ":
@@ -233,8 +251,6 @@ class SettingsWindow(QMainWindow):
         hotkey_form.addRow("Read key:", self.read_hotkey_key_combo)
         hotkey_form.addRow("", self.read_hotkey_apply_button)
         hotkey_form.addRow("Read aloud:", self.read_hotkey_value)
-        body_layout.addWidget(hotkey_group)
-
         model_group = QGroupBox("Model")
         model_group.setAccessibleName("Model settings")
         model_form = QFormLayout(model_group)
@@ -270,6 +286,7 @@ class SettingsWindow(QMainWindow):
         model_help.setAccessibleName("Model change help")
         model_form.addRow("", model_help)
         body_layout.addWidget(model_group)
+        body_layout.addWidget(hotkey_group)
 
         storage_group = QGroupBox("Model Storage")
         storage_group.setAccessibleName("Model storage")
@@ -397,14 +414,16 @@ class SettingsWindow(QMainWindow):
         self.set_read_hotkey_value(initial_read_hotkey)
         self._set_advanced_groups_visible(False)
 
+        self.setTabOrder(self.model_combo, self.apply_model_button)
+        self.setTabOrder(self.apply_model_button, self.model_status_value)
+        self.setTabOrder(self.model_status_value, self.active_model_value)
+        self.setTabOrder(self.active_model_value, self.hotkey_modifier_combo)
         self.setTabOrder(self.hotkey_modifier_combo, self.hotkey_key_combo)
         self.setTabOrder(self.hotkey_key_combo, self.hotkey_apply_button)
         self.setTabOrder(self.hotkey_apply_button, self.read_hotkey_modifier_combo)
         self.setTabOrder(self.read_hotkey_modifier_combo, self.read_hotkey_key_combo)
         self.setTabOrder(self.read_hotkey_key_combo, self.read_hotkey_apply_button)
-        self.setTabOrder(self.read_hotkey_apply_button, self.model_combo)
-        self.setTabOrder(self.model_combo, self.apply_model_button)
-        self.setTabOrder(self.apply_model_button, self.model_cache_list)
+        self.setTabOrder(self.read_hotkey_apply_button, self.model_cache_list)
         self.setTabOrder(self.model_cache_list, self.model_cache_refresh_button)
         self.setTabOrder(self.model_cache_refresh_button, self.model_cache_delete_button)
         self.setTabOrder(self.model_cache_delete_button, self.language_value)
@@ -424,7 +443,7 @@ class SettingsWindow(QMainWindow):
         self.setTabOrder(self.total_clips_value, self.status_value)
         self.setTabOrder(self.status_value, self.dictation_toggle_button)
         self.setTabOrder(self.dictation_toggle_button, self.close_to_tray_button)
-        self.hotkey_modifier_combo.setFocus()
+        self.model_combo.setFocus()
 
     def set_status(self, message: str) -> None:
         self.status_value.setText(message)
@@ -433,6 +452,10 @@ class SettingsWindow(QMainWindow):
     def focus_status(self) -> None:
         self.status_value.setFocus()
         self.status_value.selectAll()
+
+    def focus_model_status(self) -> None:
+        self.model_status_value.setFocus()
+        self.model_status_value.selectAll()
 
     def set_word_stats(self, last_words: int, total_words: int, total_clips: int) -> None:
         self.last_words_value.setText(str(last_words))
@@ -601,7 +624,7 @@ class SettingsWindow(QMainWindow):
 
     def showEvent(self, event) -> None:  # noqa: ANN001
         super().showEvent(event)
-        self.hotkey_modifier_combo.setFocus()
+        self.model_combo.setFocus()
 
     def closeEvent(self, event) -> None:  # noqa: ANN001
         event.ignore()
