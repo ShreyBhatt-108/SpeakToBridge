@@ -26,7 +26,8 @@ DICTATION_END_SOUND = Path(__file__).resolve().parent / "reverse_dictation_end.m
 SMART_DICTATION_PROMPT = (
     "Produce clean written dictation. Remove filler words (um, uh, er, ah), false starts, and stutters. "
     "Collapse accidental repeated words. Prefer readable punctuation and paragraphing. "
-    "When speech clearly indicates list items, format as a bulleted or numbered list."
+    "When speech clearly indicates list items, format as a bulleted or numbered list. "
+    "Respect spoken formatting commands like new line, start list, end list, and quotation marks."
 )
 SPOKEN_NUMBER_WORDS = (
     "one",
@@ -279,8 +280,59 @@ class DictationController(QObject):
         # Normalize spacing after removals.
         cleaned = re.sub(r"\s{2,}", " ", cleaned).strip()
         cleaned = re.sub(r"\s+([,.;:!?])", r"\1", cleaned)
+        cleaned = DictationController._apply_voice_commands(cleaned)
         cleaned = DictationController._format_spoken_numbered_list(cleaned)
         return cleaned
+
+    @staticmethod
+    def _apply_voice_commands(text: str) -> str:
+        marker_start = "<<START_LIST>>"
+        marker_end = "<<END_LIST>>"
+
+        # Explicit quote commands as fallback when automatic punctuation misses.
+        commandized = re.sub(r"\b(open quote|open quotation mark)\b", "\"", text, flags=re.IGNORECASE)
+        commandized = re.sub(r"\b(close quote|close quotation mark)\b", "\"", commandized, flags=re.IGNORECASE)
+        commandized = re.sub(r"\bquote\b", "\"", commandized, flags=re.IGNORECASE)
+        commandized = re.sub(r"\bunquote\b", "\"", commandized, flags=re.IGNORECASE)
+
+        # Common contraction miss: "does it" (ASR) for "doesn't" (intended).
+        commandized = re.sub(
+            r"\b(it|that|this|there|he|she)\s+does it\s+([a-z][a-z']*)\b",
+            r"\1 doesn't \2",
+            commandized,
+            flags=re.IGNORECASE,
+        )
+
+        commandized = re.sub(r"\bstart\s+list\b", f"\n{marker_start}\n", commandized, flags=re.IGNORECASE)
+        commandized = re.sub(r"\bend\s+list\b", f"\n{marker_end}\n", commandized, flags=re.IGNORECASE)
+        commandized = re.sub(r"\bnew\s+line\b", "\n", commandized, flags=re.IGNORECASE)
+
+        list_mode = False
+        rendered_lines: list[str] = []
+        for raw_line in commandized.splitlines():
+            line = raw_line.strip()
+            if not line:
+                if rendered_lines and rendered_lines[-1] != "":
+                    rendered_lines.append("")
+                continue
+            if line == marker_start:
+                list_mode = True
+                continue
+            if line == marker_end:
+                list_mode = False
+                continue
+
+            if list_mode:
+                if re.match(r"^(\d+\.\s+|[-*]\s+)", line):
+                    rendered_lines.append(line)
+                else:
+                    rendered_lines.append(f"- {line}")
+            else:
+                rendered_lines.append(line)
+
+        result = "\n".join(rendered_lines).strip()
+        result = re.sub(r"\n{3,}", "\n\n", result)
+        return result
 
     @staticmethod
     def _format_spoken_numbered_list(text: str) -> str:
