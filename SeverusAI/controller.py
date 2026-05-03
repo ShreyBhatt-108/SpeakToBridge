@@ -306,6 +306,8 @@ class DictationController(QObject):
         commandized = re.sub(r"\bstart\s+list\b", f"\n{marker_start}\n", commandized, flags=re.IGNORECASE)
         commandized = re.sub(r"\bend\s+list\b", f"\n{marker_end}\n", commandized, flags=re.IGNORECASE)
         commandized = re.sub(r"\bnew\s+line\b", "\n", commandized, flags=re.IGNORECASE)
+        # Avoid punctuation junk right before list start.
+        commandized = re.sub(r"[,\-;]\s*\n" + re.escape(marker_start), "\n" + marker_start, commandized)
 
         list_mode = False
         rendered_lines: list[str] = []
@@ -326,6 +328,13 @@ class DictationController(QObject):
                 if re.match(r"^(\d+\.\s+|[-*]\s+)", line):
                     rendered_lines.append(line)
                 else:
+                    # Convert inline spoken numbered items into real multi-line numbered list.
+                    inline_numbered = DictationController._extract_inline_spoken_numbered_items(line)
+                    if inline_numbered:
+                        for item_no, content in inline_numbered:
+                            rendered_lines.append(f"{item_no}. {content}")
+                        continue
+
                     # If user did not explicitly say "new line" between items,
                     # split common spoken list separators into separate bullets.
                     parts = [
@@ -343,7 +352,36 @@ class DictationController(QObject):
 
         result = "\n".join(rendered_lines).strip()
         result = re.sub(r"\n{3,}", "\n\n", result)
+        result = re.sub(r"[,\-;]\s*\n(?=(?:- |\d+\. ))", "\n", result)
         return result
+
+    @staticmethod
+    def _extract_inline_spoken_numbered_items(line: str) -> list[tuple[int, str]]:
+        token_re = re.compile(r"\b(one|two|three|four|five|six|seven|eight|nine)\b[\s,:;-]*", re.IGNORECASE)
+        matches = list(token_re.finditer(line))
+        if len(matches) < 2:
+            return []
+
+        items: list[tuple[int, str]] = []
+        for i, match in enumerate(matches):
+            word = match.group(1).lower()
+            if word not in SPOKEN_NUMBER_WORDS:
+                continue
+            item_no = SPOKEN_NUMBER_WORDS.index(word) + 1
+            start = match.end()
+            end = matches[i + 1].start() if i + 1 < len(matches) else len(line)
+            content = line[start:end].strip(" \t\r\n,;:-")
+            if content:
+                items.append((item_no, content))
+
+        if len(items) < 2:
+            return []
+
+        expected = list(range(items[0][0], items[0][0] + len(items)))
+        actual = [item_no for item_no, _ in items]
+        if actual != expected:
+            return []
+        return items
 
     @staticmethod
     def _format_spoken_numbered_list(text: str) -> str:
