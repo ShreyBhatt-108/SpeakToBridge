@@ -117,6 +117,10 @@ class HoldHotkeyListener(QObject):
             listener.stop()
 
     def _on_press(self, key) -> None:  # noqa: ANN001
+        modifier = self._key_to_modifier(key)
+        if modifier is not None:
+            self._pressed_modifiers.add(modifier)
+
         if self._matches_activation(key) and not self._activation_down:
             self._activation_down = True
             self.hotkey_pressed.emit()
@@ -127,23 +131,17 @@ class HoldHotkeyListener(QObject):
             self.read_hotkey_pressed.emit()
             return
 
-        modifier = self._key_to_modifier(key)
-        if modifier is not None:
-            self._pressed_modifiers.add(modifier)
-
     def _on_release(self, key) -> None:  # noqa: ANN001
-        if self._matches_activation(key) and self._activation_down:
+        released_modifier = self._key_to_modifier(key)
+        if self._should_release_activation(key, released_modifier):
             self._activation_down = False
             self.hotkey_released.emit()
-            return
 
-        if self._matches_read(key) and self._read_down:
+        if self._should_release_read(key, released_modifier):
             self._read_down = False
-            return
 
-        modifier = self._key_to_modifier(key)
-        if modifier is not None:
-            self._pressed_modifiers.discard(modifier)
+        if released_modifier is not None:
+            self._pressed_modifiers.discard(released_modifier)
 
     @staticmethod
     def _key_to_modifier(key) -> str | None:  # noqa: ANN001
@@ -161,7 +159,7 @@ class HoldHotkeyListener(QObject):
         return None
 
     def _matches_activation(self, key) -> bool:  # noqa: ANN001
-        if self._activation_spec.modifiers != frozenset(self._pressed_modifiers):
+        if not self._activation_spec.modifiers.issubset(self._pressed_modifiers):
             return False
 
         token = self._activation_spec.key_token
@@ -175,7 +173,7 @@ class HoldHotkeyListener(QObject):
         return False
 
     def _matches_read(self, key) -> bool:  # noqa: ANN001
-        if self._read_spec.modifiers != frozenset(self._pressed_modifiers):
+        if not self._read_spec.modifiers.issubset(self._pressed_modifiers):
             return False
         token = self._read_spec.key_token
         if token.startswith("f"):
@@ -186,3 +184,23 @@ class HoldHotkeyListener(QObject):
         if isinstance(key, keyboard.KeyCode) and key.char is not None:
             return key.char.lower() == token
         return False
+
+    def _should_release_activation(self, key, released_modifier: str | None) -> bool:  # noqa: ANN001
+        if not self._activation_down:
+            return False
+        if self._matches_activation(key):
+            return True
+        return (
+            released_modifier is not None
+            and released_modifier in self._activation_spec.modifiers
+        )
+
+    def _should_release_read(self, key, released_modifier: str | None) -> bool:  # noqa: ANN001
+        if not self._read_down:
+            return False
+        if self._matches_read(key):
+            return True
+        return (
+            released_modifier is not None
+            and released_modifier in self._read_spec.modifiers
+        )

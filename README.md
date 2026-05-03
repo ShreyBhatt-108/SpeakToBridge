@@ -35,6 +35,7 @@ This update focuses on making everyday dictation use more reliable and less conf
 - Hotkey handling is more robust for Windows key combinations:
   - better handling of generic and left/right modifier key events
   - improved support for combos like `Ctrl+Win`
+  - more reliable key-release handling to prevent stuck recording states
 - Dictation on/off behavior is stricter:
   - when dictation is off, dictation and read-aloud shortcuts stay off
   - prevents late transcript insertion after dictation has been disabled
@@ -45,6 +46,13 @@ This update focuses on making everyday dictation use more reliable and less conf
   - keeps exact replacements
   - adds local fuzzy matching for near-miss words/phrases
   - uses dictionary context as a transcription prompt to improve recognition for names and special terms
+- Transcript cleanup is smarter by default:
+  - removes common filler words and stutter artifacts
+  - collapses accidental immediate word repeats
+  - reduces punctuation artifacts from pauses (such as extra commas)
+- Spoken numbered lists are now formatted into real numbered output when clear markers are detected:
+  - examples: `one, ... two, ... three, ...` and `first law, one, ... two, ...`
+  - intro text before the list and trailing text after the list are preserved
 
 ## Run from source
 
@@ -69,6 +77,12 @@ If Inno Setup is not installed, the script still builds the EXE and tells you in
 
 - Faster Whisper model files are downloaded on first use and cached in local app data.
 - Runtime is offline after model download unless you choose a new model that is not yet cached.
+- The app runs as a single instance to prevent duplicate global listeners and duplicate paste behavior.
+
+## Developer notes
+
+- `CODE_WALKTHROUGH_LOCAL.md` is intentionally local-only learning documentation.
+- It is ignored by Git and is not part of GitHub source history.
 
 ## Credits
 

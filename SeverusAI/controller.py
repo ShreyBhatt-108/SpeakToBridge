@@ -23,6 +23,22 @@ from .whisper_engine import WhisperEngine
 LOGGER = logging.getLogger(__name__)
 DICTATION_BEGIN_SOUND = Path(__file__).resolve().parent / "dictation_begin.wav"
 DICTATION_END_SOUND = Path(__file__).resolve().parent / "reverse_dictation_end.mp3"
+SMART_DICTATION_PROMPT = (
+    "Produce clean written dictation. Remove filler words (um, uh, er, ah), false starts, and stutters. "
+    "Collapse accidental repeated words. Prefer readable punctuation and paragraphing. "
+    "When speech clearly indicates list items, format as a bulleted or numbered list."
+)
+SPOKEN_NUMBER_WORDS = (
+    "one",
+    "two",
+    "three",
+    "four",
+    "five",
+    "six",
+    "seven",
+    "eight",
+    "nine",
+)
 
 
 class DictationController(QObject):
@@ -148,8 +164,13 @@ class DictationController(QObject):
     def _transcribe_and_insert(self, audio) -> None:  # noqa: ANN001
         try:
             self.status_changed.emit("Model ready check in progress...")
-            text = self._engine.transcribe(audio, initial_prompt=self._word_bank.glossary_prompt())
+            initial_prompt_parts = [SMART_DICTATION_PROMPT]
+            glossary_prompt = self._word_bank.glossary_prompt()
+            if glossary_prompt:
+                initial_prompt_parts.append(glossary_prompt)
+            text = self._engine.transcribe(audio, initial_prompt=" ".join(initial_prompt_parts))
             text = self._word_bank.apply(text)
+            text = self._cleanup_transcript(text)
             text = self._finalize_transcript(text)
             if not text:
                 self.status_changed.emit("No speech detected.")
@@ -235,9 +256,100 @@ class DictationController(QObject):
             self.error_occurred.emit(f"Read-aloud failed ({exc}).")
 
     @staticmethod
+    def _cleanup_transcript(text: str) -> str:
+        cleaned = text.strip()
+        if not cleaned:
+            return cleaned
+
+        # Remove common filler words in standalone form.
+        cleaned = re.sub(r"\b(uh+|um+|er+|ah+|mm+|hmm+)\b", "", cleaned, flags=re.IGNORECASE)
+
+        # Remove short stutter patterns like "I-I", "th-th-the", "w-when".
+        cleaned = re.sub(r"\b([A-Za-z])-\1+\b", r"\1", cleaned)
+        cleaned = re.sub(r"\b([A-Za-z]{1,3})-\1+([A-Za-z]*)\b", r"\1\2", cleaned)
+
+        # Collapse immediate repeated words: "the the" -> "the".
+        cleaned = re.sub(r"\b(\w+)(\s+\1\b)+", r"\1", cleaned, flags=re.IGNORECASE)
+
+        # Normalize punctuation artifacts from pauses/fillers.
+        cleaned = re.sub(r",\s*,+", ", ", cleaned)
+        cleaned = re.sub(r"\s+,", ",", cleaned)
+        cleaned = re.sub(r",\s*([.!?])", r"\1", cleaned)
+
+        # Normalize spacing after removals.
+        cleaned = re.sub(r"\s{2,}", " ", cleaned).strip()
+        cleaned = re.sub(r"\s+([,.;:!?])", r"\1", cleaned)
+        cleaned = DictationController._format_spoken_numbered_list(cleaned)
+        return cleaned
+
+    @staticmethod
+    def _format_spoken_numbered_list(text: str) -> str:
+        lowered = text.lower()
+        marker_count = len(re.findall(r"\b(one|two|three|four|five|six|seven|eight|nine)\b\s*[,.:;-]", lowered))
+        if marker_count < 2:
+            return text
+
+        # Break on spoken-number boundaries (including "first law, one, ...")
+        # and rebuild as a numbered list.
+        pattern = re.compile(
+            r"(?:\b(?:first|second|third|fourth|fifth|sixth|seventh|eighth|ninth)\s+law\b\s*,\s*)?"
+            r"\b(one|two|three|four|five|six|seven|eight|nine)\b\s*[,.:;-]\s*",
+            flags=re.IGNORECASE,
+        )
+        matches = list(pattern.finditer(text))
+        if len(matches) < 2:
+            return text
+
+        items: list[tuple[int, str, int, int]] = []
+        for i, match in enumerate(matches):
+            word = match.group(1).lower()
+            if word not in SPOKEN_NUMBER_WORDS:
+                continue
+            item_no = SPOKEN_NUMBER_WORDS.index(word) + 1
+            start = match.end()
+            end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
+            content = text[start:end].strip(" \t\r\n,;:-")
+            if content:
+                items.append((item_no, content, start, end))
+
+        if len(items) < 2:
+            return text
+
+        # Keep only forward unique sequence (1,2,3...) and ignore stray repeats.
+        deduped: list[tuple[int, str, int, int]] = []
+        seen_numbers: set[int] = set()
+        for item_no, content, start, end in items:
+            if item_no in seen_numbers:
+                continue
+            seen_numbers.add(item_no)
+            deduped.append((item_no, content, start, end))
+
+        if len(deduped) < 2:
+            return text
+
+        expected = list(range(deduped[0][0], deduped[0][0] + len(deduped)))
+        actual = [item_no for item_no, _, _, _ in deduped]
+        if actual != expected:
+            return text
+
+        list_body = "\n".join(f"{item_no}. {content}" for item_no, content, _, _ in deduped)
+        prefix = text[:matches[0].start()].strip(" \t\r\n,;:-")
+        suffix = text[deduped[-1][3]:].strip(" \t\r\n,;:-")
+
+        sections: list[str] = []
+        if prefix:
+            sections.append(prefix)
+        sections.append(list_body)
+        if suffix:
+            sections.append(suffix)
+        return "\n".join(sections)
+
+    @staticmethod
     def _finalize_transcript(text: str) -> str:
         cleaned = text.strip()
         if not cleaned:
+            return cleaned
+        if "\n" in cleaned:
             return cleaned
         if re.search(r"[.!?][\"')\]]*$", cleaned):
             return cleaned
