@@ -19,6 +19,8 @@ class TextInserter:
         self._last_insert_text = ""
         self._last_insert_ts = 0.0
         self._duplicate_guard_window_s = 1.5
+        self._paste_settle_s = 0.35
+        self._restore_guard_s = 0.05
 
     def insert(self, text: str) -> tuple[bool, str]:
         normalized = text.strip()
@@ -40,13 +42,18 @@ class TextInserter:
                 # Preserve user's clipboard content and restore it after paste.
                 original_clipboard = self._clipboard_read_with_retry()
                 self._clipboard_write_with_retry(text)
+                # Ensure clipboard actually contains the transcript before issuing paste.
+                if not self._clipboard_matches(text):
+                    self._clipboard_write_with_retry(text)
                 # Allow clipboard update to settle before paste.
                 time.sleep(0.06)
                 with self._keyboard.pressed(Key.ctrl):
                     self._keyboard.press("v")
                     self._keyboard.release("v")
-                # Give target app a moment to consume clipboard before restore.
-                time.sleep(0.09)
+                # Give target app (especially browsers) time to consume clipboard before restore.
+                time.sleep(self._paste_settle_s)
+                # Small guard so key state and paste event fully finish before restore.
+                time.sleep(self._restore_guard_s)
                 if original_clipboard is not None:
                     self._clipboard_write_with_retry(original_clipboard)
             return True, "Transcript inserted into focused app."
@@ -86,3 +93,13 @@ class TextInserter:
                 time.sleep(sleep_s)
         if last_error is not None:
             raise last_error
+
+    def _clipboard_matches(self, expected: str, attempts: int = 6, sleep_s: float = 0.02) -> bool:
+        for _ in range(attempts):
+            try:
+                if pyperclip.paste() == expected:
+                    return True
+            except Exception:
+                pass
+            time.sleep(sleep_s)
+        return False
