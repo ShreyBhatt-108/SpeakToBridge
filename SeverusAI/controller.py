@@ -326,7 +326,18 @@ class DictationController(QObject):
                 if re.match(r"^(\d+\.\s+|[-*]\s+)", line):
                     rendered_lines.append(line)
                 else:
-                    rendered_lines.append(f"- {line}")
+                    # If user did not explicitly say "new line" between items,
+                    # split common spoken list separators into separate bullets.
+                    parts = [
+                        part.strip()
+                        for part in re.split(r"\s*(?:;|,\s+and\s+|,\s+then\s+|,)\s*", line)
+                        if part.strip()
+                    ]
+                    if len(parts) <= 1:
+                        rendered_lines.append(f"- {line}")
+                    else:
+                        for part in parts:
+                            rendered_lines.append(f"- {part}")
             else:
                 rendered_lines.append(line)
 
@@ -405,6 +416,9 @@ class DictationController(QObject):
             return cleaned
         if re.search(r"[.!?][\"')\]]*$", cleaned):
             return cleaned
-        if cleaned[-1].isalnum() or cleaned[-1] in ("\"", "'", ")", "]"):
+        # Only auto-periodize full sentence-like fragments; avoid forcing punctuation
+        # on short commands, fragments, and terse dictation.
+        word_count = len(re.findall(r"\b\w+\b", cleaned))
+        if word_count >= 4 and (cleaned[-1].isalnum() or cleaned[-1] in ("\"", "'", ")", "]")):
             return f"{cleaned}."
         return cleaned
