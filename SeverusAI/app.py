@@ -3,6 +3,8 @@ from __future__ import annotations
 import logging
 import sys
 import threading
+import ctypes
+from ctypes import wintypes
 
 from PySide6.QtCore import QObject, Signal
 from PySide6.QtWidgets import QApplication, QMenu, QMessageBox, QStyle, QSystemTrayIcon
@@ -19,6 +21,21 @@ from .word_bank import WordBank
 
 
 LOGGER = logging.getLogger(__name__)
+_MUTEX_ALREADY_EXISTS = 183
+_SINGLE_INSTANCE_MUTEX_NAME = "Global\\SeverusAI_SingleInstance"
+_single_instance_handle = None
+
+
+def _acquire_single_instance_mutex():
+    kernel32 = ctypes.windll.kernel32
+    kernel32.CreateMutexW.argtypes = [wintypes.LPVOID, wintypes.BOOL, wintypes.LPCWSTR]
+    kernel32.CreateMutexW.restype = wintypes.HANDLE
+    kernel32.GetLastError.restype = wintypes.DWORD
+    handle = kernel32.CreateMutexW(None, False, _SINGLE_INSTANCE_MUTEX_NAME)
+    if not handle:
+        return None, False
+    already_running = kernel32.GetLastError() == _MUTEX_ALREADY_EXISTS
+    return handle, already_running
 
 
 class SeverusAIRuntime(QObject):
@@ -395,6 +412,15 @@ def run() -> int:
     configure_logging()
     QApplication.setApplicationName(APP_NAME)
     app = QApplication(sys.argv)
+    global _single_instance_handle  # noqa: PLW0603
+    _single_instance_handle, already_running = _acquire_single_instance_mutex()
+    if already_running:
+        QMessageBox.information(
+            None,
+            APP_NAME,
+            "Severus AI is already running. Open it from the system tray.",
+        )
+        return 0
     app.setQuitOnLastWindowClosed(False)
 
     if not QSystemTrayIcon.isSystemTrayAvailable():
