@@ -129,10 +129,6 @@ class SeverusAIRuntime(QObject):
         self.model_cache_entries_ready.connect(self._apply_model_cache_entries)
 
     def _on_model_changed(self, model_name: str) -> None:
-        if not self._model_ready_map.get(model_name, False):
-            self._set_status(f"Model '{model_name}' is not ready yet. Wait for download/preparation to complete.")
-            self._window.focus_model_status()
-            return
         if model_name == self._config.model_name:
             self._set_status(f"Model unchanged: {model_name}.")
             self._window.focus_model_status()
