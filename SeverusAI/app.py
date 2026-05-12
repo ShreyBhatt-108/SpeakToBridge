@@ -202,7 +202,10 @@ class SeverusAIRuntime(QObject):
         self._config.activation_hotkey = hotkey_text
         self._config_store.save(self._config)
         self._window.set_hotkey_value(display)
-        self._set_status(f"Activation hotkey updated to {display}.")
+        hint = ""
+        if display.upper().endswith(tuple(f"F{i}" for i in range(1, 13))):
+            hint = " If this is Windows in Parallels on Mac, enable standard F-keys or use a letter/number key."
+        self._set_status(f"Activation hotkey updated to {display}.{hint}")
         self._notify_user(f"Activation hotkey updated to {display}.", QSystemTrayIcon.MessageIcon.Information, 1800)
 
     def _on_read_hotkey_changed(self, hotkey_text: str) -> None:
@@ -214,7 +217,10 @@ class SeverusAIRuntime(QObject):
         self._config.read_hotkey = hotkey_text
         self._config_store.save(self._config)
         self._window.set_read_hotkey_value(display)
-        self._set_status(f"Read-aloud hotkey updated to {display}.")
+        hint = ""
+        if display.upper().endswith(tuple(f"F{i}" for i in range(1, 13))):
+            hint = " If this is Windows in Parallels on Mac, enable standard F-keys or use a letter/number key."
+        self._set_status(f"Read-aloud hotkey updated to {display}.{hint}")
 
     def _on_recording_changed(self, recording: bool) -> None:
         # Keep frequent dictation state changes in the status field only.
@@ -260,6 +266,16 @@ class SeverusAIRuntime(QObject):
                 f"Dictation disabled. {self._hotkey.activation_hotkey_display} will not start recording."
             )
             return
+        if self._controller.is_preloading:
+            model_name = self._pending_model_name or self._config.model_name
+            self._set_status(
+                f"Model '{model_name}' is still preparing/downloading. Hotkey is paused until model is ready."
+            )
+            self._window.focus_model_status()
+            return
+        if self._controller.is_busy:
+            self._set_status("Please wait. Transcription in progress.")
+            return
         if self._controller.is_recording:
             self._controller.stop_recording_and_transcribe()
             return
@@ -298,8 +314,7 @@ class SeverusAIRuntime(QObject):
         model_status = self._extract_model_status(message)
         if model_status is not None:
             self._window.set_model_status(model_status)
-        else:
-            self._window.set_status(message)
+        self._window.set_status(message)
         if hasattr(self, "_status_action"):
             short = message if len(message) <= 70 else f"{message[:67]}..."
             self._status_action.setText(f"Status: {short}")
