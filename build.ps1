@@ -1,5 +1,24 @@
 $ErrorActionPreference = "Stop"
 
+$pythonArch = python -c "import platform, struct; print(platform.machine() + '|' + str(struct.calcsize('P') * 8))"
+$pythonArchParts = $pythonArch.Trim().Split("|")
+$machine = $pythonArchParts[0]
+$pointerBits = $pythonArchParts[1]
+
+Write-Host "Build Python architecture: machine=$machine, bits=$pointerBits"
+
+if ($pointerBits -ne "64") {
+    throw "SeverusAI Windows releases must be built with 64-bit Python."
+}
+
+if ($machine -notin @("AMD64", "x86_64", "ARM64", "aarch64")) {
+    throw "Unsupported 64-bit Python architecture '$machine'. Build with x64 or ARM64 Python."
+}
+
+Remove-Item -Recurse -Force ".\build" -ErrorAction SilentlyContinue
+Remove-Item -Recurse -Force ".\dist\SeverusAI" -ErrorAction SilentlyContinue
+Remove-Item -Force ".\dist\SeverusAI-Setup.exe" -ErrorAction SilentlyContinue
+
 python -m pip install pyinstaller
 python -m PyInstaller --noconfirm --windowed --onedir --name SeverusAI `
     --collect-data faster_whisper `
@@ -9,6 +28,49 @@ python -m PyInstaller --noconfirm --windowed --onedir --name SeverusAI `
 
 if (-not (Test-Path ".\dist\SeverusAI\SeverusAI.exe")) {
     throw "Build failed: .\dist\SeverusAI\SeverusAI.exe was not created."
+}
+
+$portAudioDir = ".\dist\SeverusAI\_internal\_sounddevice_data\portaudio-binaries"
+$soundDeviceVersion = python -c "import sounddevice; print(sounddevice.__version__)"
+$pythonWheelVersion = python -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"
+$portAudioDllName = if ($machine -in @("ARM64", "aarch64")) {
+    "libportaudioarm64.dll"
+} else {
+    "libportaudio64bit.dll"
+}
+$expectedPortAudio = Join-Path $portAudioDir $portAudioDllName
+
+if (-not (Test-Path $expectedPortAudio)) {
+    Write-Warning "Expected PortAudio binary '$portAudioDllName' was not packaged automatically. Fetching the matching official sounddevice wheel."
+
+    $wheelPlatform = if ($machine -in @("ARM64", "aarch64")) { "win_arm64" } else { "win_amd64" }
+    $wheelDir = Join-Path $env:TEMP "SeverusAI-sounddevice-wheel"
+    Remove-Item -Recurse -Force $wheelDir -ErrorAction SilentlyContinue
+    New-Item -ItemType Directory -Path $wheelDir | Out-Null
+
+    python -m pip download `
+        --only-binary=:all: `
+        --no-deps `
+        --platform $wheelPlatform `
+        --implementation py `
+        --python-version $pythonWheelVersion `
+        --abi none `
+        --dest $wheelDir `
+        "sounddevice==$soundDeviceVersion"
+
+    $wheelPath = Get-ChildItem -Path $wheelDir -Filter "*.whl" | Select-Object -First 1
+    if (-not $wheelPath) {
+        throw "Build failed: could not download the $wheelPlatform sounddevice wheel for version $soundDeviceVersion."
+    }
+
+    python -c "import sys, zipfile; from pathlib import Path; wheel=Path(sys.argv[1]); target=Path(sys.argv[2]); dll=sys.argv[3]; target.mkdir(parents=True, exist_ok=True); archive=zipfile.ZipFile(wheel); member=next((name for name in archive.namelist() if name.endswith('/portaudio-binaries/' + dll)), None); assert member, f'{dll} missing from {wheel.name}'; target.joinpath(dll).write_bytes(archive.read(member))" `
+        $wheelPath.FullName `
+        $portAudioDir `
+        $portAudioDllName
+}
+
+if (-not (Test-Path $expectedPortAudio)) {
+    throw "Build failed: expected PortAudio binary was not packaged at '$expectedPortAudio'."
 }
 
 $isccCandidates = @(
