@@ -282,6 +282,9 @@ class DictationController(QObject):
         cleaned = re.sub(r"\s+([,.;:!?])", r"\1", cleaned)
         cleaned = DictationController._apply_voice_commands(cleaned)
         cleaned = DictationController._format_spoken_numbered_list(cleaned)
+        # Keep quotation marks tight to words: "hello" not " hello " .
+        cleaned = re.sub(r'(["“])\s+(\S)', r"\1\2", cleaned)
+        cleaned = re.sub(r'(\S)\s+(["”])', r"\1\2", cleaned)
         return cleaned
 
     @staticmethod
