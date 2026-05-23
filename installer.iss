@@ -1,7 +1,7 @@
 [Setup]
 AppId={{D1A780CB-B9C6-4F0B-9FF6-EEA4D2EC8D66}
 AppName=Severus AI
-AppVersion=1.1.1
+AppVersion=1.1.2
 AppPublisher=Shrey Bhatt
 AppCopyright=Copyright (C) 2026 Shrey Bhatt
 DefaultDirName={autopf}\SeverusAI

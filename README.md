@@ -22,12 +22,15 @@ Windows-only local dictation app built with PySide6 + faster-whisper.
   - cached models are shown in Settings with size and readiness status
   - old cached models can be deleted from Settings to free disk space
 - Local-only transcription after model download.
+- Pause-preserving VAD is enabled by default:
+  - it trims dead air after roughly `1000 ms` of silence and keeps padding around speech
+  - short and natural pauses are preserved so Whisper can still infer commas and periods from cadence
 - Default model is `small`.
 - English-only dictation.
 - Default microphone only.
 - Clipboard safety: existing clipboard text is backed up before paste and restored right after insertion.
 
-## Release notes (v1.1.1)
+## Release notes (v1.1.2)
 
 This update focuses on making everyday dictation use more reliable and less confusing.
 

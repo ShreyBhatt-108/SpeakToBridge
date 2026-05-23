@@ -61,6 +61,7 @@ class DictationController(QObject):
             model_name=config.model_name,
             language=config.language,
             runtime_mode=config.runtime_mode,
+            vad_mode=config.vad_mode,
             model_cache_dir=model_cache_dir,
             status_callback=self.status_changed.emit,
         )
@@ -273,12 +274,14 @@ class DictationController(QObject):
         cleaned = re.sub(r"\b(\w+)(\s+\1\b)+", r"\1", cleaned, flags=re.IGNORECASE)
 
         # Normalize punctuation artifacts from pauses/fillers.
+        cleaned = re.sub(r"^[,.;:!?]+\s+", "", cleaned)
         cleaned = re.sub(r",\s*,+", ", ", cleaned)
         cleaned = re.sub(r"\s+,", ",", cleaned)
         cleaned = re.sub(r",\s*([.!?])", r"\1", cleaned)
 
         # Normalize spacing after removals.
         cleaned = re.sub(r"\s{2,}", " ", cleaned).strip()
+        cleaned = re.sub(r"^[,.;:!?]+\s*", "", cleaned)
         cleaned = re.sub(r"\s+([,.;:!?])", r"\1", cleaned)
         cleaned = DictationController._apply_voice_commands(cleaned)
         cleaned = DictationController._format_spoken_numbered_list(cleaned)
@@ -356,6 +359,7 @@ class DictationController(QObject):
         result = "\n".join(rendered_lines).strip()
         result = re.sub(r"\n{3,}", "\n\n", result)
         result = re.sub(r"[,\-;]\s*\n(?=(?:- |\d+\. ))", "\n", result)
+        result = DictationController._normalize_numbered_bullet_lists(result)
         return result
 
     @staticmethod
@@ -385,6 +389,55 @@ class DictationController(QObject):
         if actual != expected:
             return []
         return items
+
+    @staticmethod
+    def _normalize_numbered_bullet_lists(text: str) -> str:
+        marker_to_number = {
+            **{word: idx + 1 for idx, word in enumerate(SPOKEN_NUMBER_WORDS)},
+            "first": 1,
+            "second": 2,
+            "third": 3,
+            "fourth": 4,
+            "fifth": 5,
+            "sixth": 6,
+            "seventh": 7,
+            "eighth": 8,
+            "ninth": 9,
+        }
+        bullet_re = re.compile(
+            r"^[-*]\s+(?:(\d+)|(" + "|".join(marker_to_number) + r"))[\s).,:;-]+(.+)$",
+            re.IGNORECASE,
+        )
+
+        lines = text.splitlines()
+        rendered: list[str] = []
+        i = 0
+        while i < len(lines):
+            block: list[tuple[str, int, str]] = []
+            j = i
+            while j < len(lines):
+                line = lines[j]
+                match = bullet_re.match(line.strip())
+                if not match:
+                    break
+                marker = match.group(1) or match.group(2)
+                item_no = int(marker) if marker.isdigit() else marker_to_number[marker.lower()]
+                content = match.group(3).strip(" \t\r\n,;:-")
+                if not content:
+                    break
+                block.append((line, item_no, content))
+                j += 1
+
+            numbers = [item_no for _, item_no, _ in block]
+            if len(block) >= 2 and numbers == list(range(numbers[0], numbers[0] + len(block))):
+                rendered.extend(f"{item_no}. {content}" for _, item_no, content in block)
+                i = j
+                continue
+
+            rendered.append(lines[i])
+            i += 1
+
+        return "\n".join(rendered)
 
     @staticmethod
     def _format_spoken_numbered_list(text: str) -> str:

@@ -497,15 +497,15 @@ class SettingsWindow(QMainWindow):
             is_ready = ready_map.get(model_name, False)
             if model_name == active_model:
                 label = f"{model_name} (active)"
-                is_ready = True
             elif is_ready:
                 label = f"{model_name} (ready)"
             else:
-                label = f"{model_name} (not ready)"
+                label = f"{model_name} (download on apply)"
             self.model_combo.setItemText(i, label)
             model_item = self.model_combo.model().item(i)
             if model_item is not None:
-                model_item.setEnabled(is_ready or model_name == active_model)
+                # Keep all models selectable so users can trigger first-time download.
+                model_item.setEnabled(True)
 
     def set_model_cache_refreshing(self, refreshing: bool) -> None:
         self.model_cache_refresh_button.setEnabled(not refreshing)

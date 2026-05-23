@@ -13,6 +13,7 @@ from .constants import (
     DEFAULT_MODEL,
     DEFAULT_PRIVACY_MODE,
     DEFAULT_RUNTIME_MODE,
+    DEFAULT_VAD_MODE,
 )
 
 
@@ -26,6 +27,7 @@ class AppConfig:
     dictionary_enabled: bool = DEFAULT_DICTIONARY_ENABLED
     activation_hotkey: str = DEFAULT_ACTIVATION_HOTKEY
     read_hotkey: str = DEFAULT_READ_HOTKEY
+    vad_mode: str = DEFAULT_VAD_MODE
 
     @classmethod
     def from_dict(cls, data: dict) -> "AppConfig":
@@ -39,6 +41,7 @@ class AppConfig:
             dictionary_enabled=bool(data.get("dictionary_enabled", default.dictionary_enabled)),
             activation_hotkey=str(data.get("activation_hotkey", default.activation_hotkey)),
             read_hotkey=str(data.get("read_hotkey", default.read_hotkey)),
+            vad_mode=str(data.get("vad_mode", default.vad_mode)),
         )
 
     def to_dict(self) -> dict:

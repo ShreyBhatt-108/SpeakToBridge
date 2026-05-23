@@ -1,6 +1,9 @@
 $ErrorActionPreference = "Stop"
 
-$pythonArch = python -c "import platform, struct; print(platform.machine() + '|' + str(struct.calcsize('P') * 8))"
+$pythonCmd = if ($env:SEVERUS_BUILD_PYTHON) { $env:SEVERUS_BUILD_PYTHON } else { "python" }
+Write-Host "Build Python command: $pythonCmd"
+
+$pythonArch = & $pythonCmd -c "import platform, struct; print(platform.machine() + '|' + str(struct.calcsize('P') * 8))"
 $pythonArchParts = $pythonArch.Trim().Split("|")
 $machine = $pythonArchParts[0]
 $pointerBits = $pythonArchParts[1]
@@ -19,8 +22,8 @@ Remove-Item -Recurse -Force ".\build" -ErrorAction SilentlyContinue
 Remove-Item -Recurse -Force ".\dist\SeverusAI" -ErrorAction SilentlyContinue
 Remove-Item -Force ".\dist\SeverusAI-Setup.exe" -ErrorAction SilentlyContinue
 
-python -m pip install pyinstaller
-python -m PyInstaller --noconfirm --windowed --onedir --name SeverusAI `
+& $pythonCmd -m pip install pyinstaller
+& $pythonCmd -m PyInstaller --noconfirm --windowed --onedir --noupx --name SeverusAI `
     --collect-data faster_whisper `
     --add-data "SeverusAI\dictation_begin.wav;SeverusAI" `
     --add-data "SeverusAI\reverse_dictation_end.mp3;SeverusAI" `
@@ -31,8 +34,8 @@ if (-not (Test-Path ".\dist\SeverusAI\SeverusAI.exe")) {
 }
 
 $portAudioDir = ".\dist\SeverusAI\_internal\_sounddevice_data\portaudio-binaries"
-$soundDeviceVersion = python -c "import sounddevice; print(sounddevice.__version__)"
-$pythonWheelVersion = python -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"
+$soundDeviceVersion = & $pythonCmd -c "import sounddevice; print(sounddevice.__version__)"
+$pythonWheelVersion = & $pythonCmd -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"
 $portAudioDllName = if ($machine -in @("ARM64", "aarch64")) {
     "libportaudioarm64.dll"
 } else {
@@ -48,7 +51,7 @@ if (-not (Test-Path $expectedPortAudio)) {
     Remove-Item -Recurse -Force $wheelDir -ErrorAction SilentlyContinue
     New-Item -ItemType Directory -Path $wheelDir | Out-Null
 
-    python -m pip download `
+    & $pythonCmd -m pip download `
         --only-binary=:all: `
         --no-deps `
         --platform $wheelPlatform `
@@ -63,7 +66,7 @@ if (-not (Test-Path $expectedPortAudio)) {
         throw "Build failed: could not download the $wheelPlatform sounddevice wheel for version $soundDeviceVersion."
     }
 
-    python -c "import sys, zipfile; from pathlib import Path; wheel=Path(sys.argv[1]); target=Path(sys.argv[2]); dll=sys.argv[3]; target.mkdir(parents=True, exist_ok=True); archive=zipfile.ZipFile(wheel); member=next((name for name in archive.namelist() if name.endswith('/portaudio-binaries/' + dll)), None); assert member, f'{dll} missing from {wheel.name}'; target.joinpath(dll).write_bytes(archive.read(member))" `
+    & $pythonCmd -c "import sys, zipfile; from pathlib import Path; wheel=Path(sys.argv[1]); target=Path(sys.argv[2]); dll=sys.argv[3]; target.mkdir(parents=True, exist_ok=True); archive=zipfile.ZipFile(wheel); member=next((name for name in archive.namelist() if name.endswith('/portaudio-binaries/' + dll)), None); assert member, f'{dll} missing from {wheel.name}'; target.joinpath(dll).write_bytes(archive.read(member))" `
         $wheelPath.FullName `
         $portAudioDir `
         $portAudioDllName

@@ -7,9 +7,9 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from whispr_accessible.config import AppConfig, ConfigStore
-from whispr_accessible.paths import get_config_path, get_model_cache_dir
-from whispr_accessible.whisper_engine import WhisperEngine
+from SeverusAI.config import AppConfig, ConfigStore
+from SeverusAI.paths import get_config_path, get_model_cache_dir
+from SeverusAI.whisper_engine import WhisperEngine
 
 
 def main() -> int:
@@ -35,6 +35,7 @@ def main() -> int:
         model_name=config.model_name,
         language=config.language,
         runtime_mode=config.runtime_mode,
+        vad_mode=config.vad_mode,
         model_cache_dir=model_cache,
     )
     runtime = engine._resolve_runtime()  # noqa: SLF001

@@ -32,12 +32,14 @@ class WhisperEngine:
         model_name: str,
         language: str,
         runtime_mode: str,
+        vad_mode: str,
         model_cache_dir: Path,
         status_callback=None,  # noqa: ANN001
     ) -> None:
         self._model_name = model_name
         self._language = language
         self._runtime_mode = runtime_mode
+        self._vad_mode = vad_mode
         self._model_cache_dir = model_cache_dir
         self._status_callback = status_callback
         self._model: WhisperModel | None = None
@@ -133,6 +135,30 @@ class WhisperEngine:
     def warm_model(self) -> None:
         self._ensure_model()
 
+    def _vad_options(self) -> dict:
+        if self._vad_mode == "off":
+            return {"vad_filter": False}
+        profiles = {
+            # More aggressive, useful if the user prefers speed and accepts that
+            # some long intentional pauses may be shortened.
+            "fast": {"min_silence_duration_ms": 500, "speech_pad_ms": 250},
+            # Default: remove real dead air while preserving most comma/period
+            # pause cues for Whisper's punctuation inference.
+            "pause_preserving": {"min_silence_duration_ms": 1000, "speech_pad_ms": 350},
+            # Maximum protection for intentional pauses, with less speed benefit.
+            "accuracy": {"min_silence_duration_ms": 1600, "speech_pad_ms": 500},
+        }
+        profile = profiles.get(self._vad_mode, profiles["pause_preserving"])
+        return {
+            "vad_filter": True,
+            "vad_parameters": {
+                "threshold": 0.5,
+                "min_speech_duration_ms": 250,
+                "min_silence_duration_ms": profile["min_silence_duration_ms"],
+                "speech_pad_ms": profile["speech_pad_ms"],
+            },
+        }
+
     def transcribe(self, audio: np.ndarray, initial_prompt: str = "") -> str:
         if audio.size == 0:
             return ""
@@ -140,10 +166,9 @@ class WhisperEngine:
         assert self._model is not None
         options = {
             "language": self._language,
-            "vad_filter": True,
-            "vad_parameters": {"min_silence_duration_ms": 200},
-            "beam_size": 5,
+            "beam_size": 4,
         }
+        options.update(self._vad_options())
         if initial_prompt:
             options["initial_prompt"] = initial_prompt
         segments, _info = self._model.transcribe(
