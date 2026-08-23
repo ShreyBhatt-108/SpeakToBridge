@@ -4,18 +4,17 @@ import logging
 import re
 import subprocess
 import threading
-import time
 import winsound
 import os
-from ctypes import wintypes, windll
 from pathlib import Path
 
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import QObject, QTimer, Signal
 
 from .audio import AudioRecorder
 from .audio_ducking import SystemAudioDucker
 from .config import AppConfig
 from .insertion import TextInserter
+from .sound_feedback import SoundFeedbackPlayer
 from .word_bank import WordBank
 from .whisper_engine import WhisperEngine
 
@@ -23,6 +22,9 @@ from .whisper_engine import WhisperEngine
 LOGGER = logging.getLogger(__name__)
 DICTATION_BEGIN_SOUND = Path(__file__).resolve().parent / "dictation_begin.wav"
 DICTATION_END_SOUND = Path(__file__).resolve().parent / "reverse_dictation_end.mp3"
+PROCESSING_SOUND = Path(__file__).resolve().parent / "status_processing.mp3"
+SUCCESS_SOUND = Path(__file__).resolve().parent / "status_success.mp3"
+FAILURE_SOUND = Path(__file__).resolve().parent / "status_failure.mp3"
 SMART_DICTATION_PROMPT = (
     "Produce clean written dictation. Remove filler words (um, uh, er, ah), false starts, and stutters. "
     "Collapse accidental repeated words. Prefer readable punctuation and paragraphing. "
@@ -53,9 +55,13 @@ class DictationController(QObject):
     def __init__(self, config: AppConfig, model_cache_dir, word_bank: WordBank) -> None:  # noqa: ANN001
         super().__init__()
         self._config = config
-        self._recorder = AudioRecorder(sample_rate=16_000)
+        self._recorder = AudioRecorder(
+            sample_rate=16_000,
+            max_duration_seconds=config.max_recording_seconds,
+        )
         self._inserter = TextInserter()
         self._audio_ducker = SystemAudioDucker()
+        self._sound_feedback = SoundFeedbackPlayer()
         self._word_bank = word_bank
         self._engine = WhisperEngine(
             model_name=config.model_name,
@@ -71,6 +77,10 @@ class DictationController(QObject):
         self._is_preloading = False
         self._last_transcript = ""
         self._enabled = True
+        self._activation_hotkey_display = config.activation_hotkey.upper()
+        self._recording_timer = QTimer(self)
+        self._recording_timer.setSingleShot(True)
+        self._recording_timer.timeout.connect(self._on_recording_timeout)
 
     @property
     def is_busy(self) -> bool:
@@ -91,6 +101,16 @@ class DictationController(QObject):
 
     def set_model(self, model_name: str) -> None:
         self._engine.update_model(model_name)
+
+    def set_activation_hotkey_display(self, display: str) -> None:
+        self._activation_hotkey_display = display
+
+    def set_max_recording_seconds(self, seconds: int) -> None:
+        self._config.max_recording_seconds = int(seconds)
+        self._recorder.set_max_duration_seconds(seconds)
+
+    def play_failure_feedback(self) -> None:
+        self._sound_feedback.play(FAILURE_SOUND)
 
     def preload_model_async(self, model_name: str | None = None) -> None:
         with self._busy_lock:
@@ -117,35 +137,47 @@ class DictationController(QObject):
         try:
             self._audio_ducker.duck()
             self._recorder.start()
+            self._recording_timer.start(self._config.max_recording_seconds * 1000)
             winsound.PlaySound(str(DICTATION_BEGIN_SOUND), winsound.SND_FILENAME | winsound.SND_ASYNC)
             self.recording_changed.emit(True)
-            self.status_changed.emit("Recording. Press Ctrl+F9 again to stop and transcribe.")
+            self.status_changed.emit(
+                f"Recording. Press {self._activation_hotkey_display} again to stop and transcribe. "
+                f"Maximum length: {self._config.max_recording_seconds} seconds."
+            )
         except Exception as exc:
+            self._recording_timer.stop()
             self._audio_ducker.restore()
             LOGGER.exception("Microphone start failed")
             self.error_occurred.emit(f"Unable to start microphone ({exc}).")
 
-    def stop_recording_and_transcribe(self) -> None:
+    def stop_recording_and_transcribe(self, maximum_reached: bool = False) -> None:
         if not self._recorder.is_recording:
             return
+        self._recording_timer.stop()
         audio = self._recorder.stop()
         self._audio_ducker.restore()
-        self._play_end_sound()
+        self._sound_feedback.play(DICTATION_END_SOUND)
         self.recording_changed.emit(False)
         if audio.size == 0:
+            self._sound_feedback.play(FAILURE_SOUND)
             self.status_changed.emit("No audio captured.")
             return
 
         with self._busy_lock:
             self._is_busy = True
         self.busy_changed.emit(True)
-        self.status_changed.emit("Transcribing locally...")
+        self._sound_feedback.play(PROCESSING_SOUND)
+        if maximum_reached:
+            self.status_changed.emit("Maximum recording length reached. Recording stopped; transcribing locally...")
+        else:
+            self.status_changed.emit("Transcribing locally...")
         worker = threading.Thread(target=self._transcribe_and_insert, args=(audio,), daemon=True)
         worker.start()
 
     def cancel_recording(self) -> None:
         if not self._recorder.is_recording:
             return
+        self._recording_timer.stop()
         self._recorder.stop()
         self._audio_ducker.restore()
         self.recording_changed.emit(False)
@@ -163,6 +195,17 @@ class DictationController(QObject):
         worker = threading.Thread(target=self._speak_text, args=(text,), daemon=True)
         worker.start()
 
+    def shutdown(self) -> None:
+        self._recording_timer.stop()
+        if self._recorder.is_recording:
+            self._recorder.stop()
+            self._audio_ducker.restore()
+        self._sound_feedback.close()
+
+    def _on_recording_timeout(self) -> None:
+        if self._recorder.is_recording:
+            self.stop_recording_and_transcribe(maximum_reached=True)
+
     def _transcribe_and_insert(self, audio) -> None:  # noqa: ANN001
         try:
             self.status_changed.emit("Model ready check in progress...")
@@ -175,6 +218,7 @@ class DictationController(QObject):
             text = self._cleanup_transcript(text)
             text = self._finalize_transcript(text)
             if not text:
+                self._sound_feedback.play(FAILURE_SOUND)
                 self.status_changed.emit("No speech detected.")
                 return
             if not self._enabled:
@@ -188,6 +232,8 @@ class DictationController(QObject):
             self.status_changed.emit(msg)
             if not inserted:
                 self.error_occurred.emit(msg)
+            else:
+                self._sound_feedback.play(SUCCESS_SOUND)
         except Exception as exc:  # pragma: no cover
             LOGGER.exception("Transcription flow failed")
             self.error_occurred.emit(f"Transcription failed ({exc}).")
@@ -205,6 +251,7 @@ class DictationController(QObject):
             self.status_changed.emit("Preparing selected model...")
             self._engine.warm_model()
             self.status_changed.emit("Model ready.")
+            self._sound_feedback.play(SUCCESS_SOUND)
             self.model_preload_finished.emit(requested_model, True, "")
         except Exception as exc:  # pragma: no cover
             LOGGER.exception("Model preload failed")
@@ -219,32 +266,25 @@ class DictationController(QObject):
             if should_emit_idle:
                 self.busy_changed.emit(False)
 
-    def _play_end_sound(self) -> None:
-        if not DICTATION_END_SOUND.exists():
-            winsound.PlaySound("SystemHand", winsound.SND_ALIAS | winsound.SND_ASYNC)
-            return
-        alias = f"dictation_end_{int(time.time() * 1000)}"
-        mci_send_string = windll.winmm.mciSendStringW
-        mci_send_string.argtypes = [wintypes.LPCWSTR, wintypes.LPWSTR, wintypes.UINT, wintypes.HANDLE]
-        mci_send_string.restype = wintypes.UINT
-        mci_send_string(f'open "{DICTATION_END_SOUND}" type mpegvideo alias {alias}', None, 0, 0)
-        mci_send_string(f"play {alias} from 0", None, 0, 0)
-
     def _speak_text(self, text: str) -> None:
-        escaped = text.replace("'", "''")
         cmd = (
             "Add-Type -AssemblyName System.Speech; "
             "$synth = New-Object System.Speech.Synthesis.SpeechSynthesizer; "
-            f"$synth.Speak('{escaped}');"
+            "$text = [Console]::In.ReadToEnd(); "
+            "$synth.Speak($text);"
         )
         try:
             startupinfo = subprocess.STARTUPINFO()
             startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
             startupinfo.wShowWindow = 0
             creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+            powershell = Path(os.environ.get("SystemRoot", r"C:\Windows")) / (
+                r"System32\WindowsPowerShell\v1.0\powershell.exe"
+            )
             with self._speech_lock:
                 subprocess.run(
-                    ["powershell", "-NoProfile", "-Command", cmd],
+                    [str(powershell), "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", cmd],
+                    input=text,
                     check=True,
                     capture_output=True,
                     text=True,
@@ -285,21 +325,38 @@ class DictationController(QObject):
         cleaned = re.sub(r"\s+([,.;:!?])", r"\1", cleaned)
         cleaned = DictationController._apply_voice_commands(cleaned)
         cleaned = DictationController._format_spoken_numbered_list(cleaned)
-        # Keep quotation marks tight to words: "hello" not " hello " .
-        cleaned = re.sub(r'(["“])\s+(\S)', r"\1\2", cleaned)
-        cleaned = re.sub(r'(\S)\s+(["”])', r"\1\2", cleaned)
+        # Keep quotation marks tight inside the quote, while preserving boundary spacing.
+        cleaned = re.sub(r'["“]\s+(\S)', r'"\1', cleaned)
+        cleaned = re.sub(r'(\S)\s+["”]', r'\1"', cleaned)
+        cleaned = re.sub(r'(\w)"([^"\n]+)"(\w)', r'\1 "\2" \3', cleaned)
         return cleaned
 
     @staticmethod
     def _apply_voice_commands(text: str) -> str:
         marker_start = "<<START_LIST>>"
         marker_end = "<<END_LIST>>"
+        quote_open = r"(?:open quote|open quotation mark|quote)"
+        quote_close = r"(?:close quote|close quotation mark|unquote|quote)"
 
-        # Explicit quote commands as fallback when automatic punctuation misses.
-        commandized = re.sub(r"\b(open quote|open quotation mark)\b", "\"", text, flags=re.IGNORECASE)
+        # First, fold paired spoken quote commands into a clean quoted span.
+        # This absorbs common comma artifacts from pauses around the command words.
+        pair_re = re.compile(
+            rf"\b{quote_open}\b\s*[,;:]*\s*(.+?)\s*[,;:]*\s*\b{quote_close}\b",
+            flags=re.IGNORECASE,
+        )
+        commandized = text
+        for _ in range(8):
+            commandized, replacements = pair_re.subn(r'"\1"', commandized)
+            if replacements == 0:
+                break
+
+        # Fallback: handle unmatched spoken quote commands one by one.
+        commandized = re.sub(r"\b(open quote|open quotation mark)\b", "\"", commandized, flags=re.IGNORECASE)
         commandized = re.sub(r"\b(close quote|close quotation mark)\b", "\"", commandized, flags=re.IGNORECASE)
         commandized = re.sub(r"\bquote\b", "\"", commandized, flags=re.IGNORECASE)
         commandized = re.sub(r"\bunquote\b", "\"", commandized, flags=re.IGNORECASE)
+        commandized = re.sub(r'"\s*[,;:]+\s*', '"', commandized)
+        commandized = re.sub(r'\s*[,;:]+\s*"', '"', commandized)
 
         # Common contraction miss: "does it" (ASR) for "doesn't" (intended).
         commandized = re.sub(

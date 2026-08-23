@@ -6,42 +6,64 @@ from pathlib import Path
 
 from .constants import (
     DEFAULT_ACTIVATION_HOTKEY,
+    DEFAULT_MAX_RECORDING_SECONDS,
     DEFAULT_READ_HOTKEY,
-    DEFAULT_DICTIONARY_ENABLED,
-    DEFAULT_INSERT_MODE,
     DEFAULT_LANGUAGE,
     DEFAULT_MODEL,
-    DEFAULT_PRIVACY_MODE,
     DEFAULT_RUNTIME_MODE,
     DEFAULT_VAD_MODE,
+    MAX_MAX_RECORDING_SECONDS,
+    MIN_MAX_RECORDING_SECONDS,
+    MODEL_CHOICES,
 )
+
+
+ALLOWED_MODELS = frozenset(MODEL_CHOICES.values())
+ALLOWED_LANGUAGES = frozenset({"en"})
+ALLOWED_RUNTIME_MODES = frozenset({"cpu", "cpu_auto_gpu"})
+ALLOWED_VAD_MODES = frozenset({"off", "fast", "pause_preserving", "accuracy"})
+
+
+def _validated_string(value: object, default: str, allowed: frozenset[str]) -> str:
+    candidate = str(value)
+    return candidate if candidate in allowed else default
+
+
+def _validated_recording_limit(value: object, default: int) -> int:
+    try:
+        candidate = int(value)
+    except (TypeError, ValueError):
+        return default
+    return max(MIN_MAX_RECORDING_SECONDS, min(MAX_MAX_RECORDING_SECONDS, candidate))
 
 
 @dataclass
 class AppConfig:
     model_name: str = DEFAULT_MODEL
     language: str = DEFAULT_LANGUAGE
-    insert_mode: str = DEFAULT_INSERT_MODE
     runtime_mode: str = DEFAULT_RUNTIME_MODE
-    privacy_mode: str = DEFAULT_PRIVACY_MODE
-    dictionary_enabled: bool = DEFAULT_DICTIONARY_ENABLED
     activation_hotkey: str = DEFAULT_ACTIVATION_HOTKEY
     read_hotkey: str = DEFAULT_READ_HOTKEY
     vad_mode: str = DEFAULT_VAD_MODE
+    max_recording_seconds: int = DEFAULT_MAX_RECORDING_SECONDS
 
     @classmethod
     def from_dict(cls, data: dict) -> "AppConfig":
         default = cls()
+        if not isinstance(data, dict):
+            return default
         return cls(
-            model_name=str(data.get("model_name", default.model_name)),
-            language=str(data.get("language", default.language)),
-            insert_mode=str(data.get("insert_mode", default.insert_mode)),
-            runtime_mode=str(data.get("runtime_mode", default.runtime_mode)),
-            privacy_mode=str(data.get("privacy_mode", default.privacy_mode)),
-            dictionary_enabled=bool(data.get("dictionary_enabled", default.dictionary_enabled)),
+            model_name=_validated_string(data.get("model_name"), default.model_name, ALLOWED_MODELS),
+            language=_validated_string(data.get("language"), default.language, ALLOWED_LANGUAGES),
+            runtime_mode=_validated_string(
+                data.get("runtime_mode"), default.runtime_mode, ALLOWED_RUNTIME_MODES
+            ),
             activation_hotkey=str(data.get("activation_hotkey", default.activation_hotkey)),
             read_hotkey=str(data.get("read_hotkey", default.read_hotkey)),
-            vad_mode=str(data.get("vad_mode", default.vad_mode)),
+            vad_mode=_validated_string(data.get("vad_mode"), default.vad_mode, ALLOWED_VAD_MODES),
+            max_recording_seconds=_validated_recording_limit(
+                data.get("max_recording_seconds"), default.max_recording_seconds
+            ),
         )
 
     def to_dict(self) -> dict:

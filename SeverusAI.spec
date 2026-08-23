@@ -1,7 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 from PyInstaller.utils.hooks import collect_data_files
 
-datas = [('SeverusAI\\dictation_begin.wav', 'SeverusAI'), ('SeverusAI\\reverse_dictation_end.mp3', 'SeverusAI')]
+datas = [('SeverusAI\\dictation_begin.wav', 'SeverusAI'), ('SeverusAI\\reverse_dictation_end.mp3', 'SeverusAI'), ('SeverusAI\\status_processing.mp3', 'SeverusAI'), ('SeverusAI\\status_success.mp3', 'SeverusAI'), ('SeverusAI\\status_failure.mp3', 'SeverusAI')]
 datas += collect_data_files('faster_whisper')
 
 

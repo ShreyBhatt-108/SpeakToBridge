@@ -2,6 +2,11 @@ $ErrorActionPreference = "Stop"
 
 $pythonCmd = if ($env:SEVERUS_BUILD_PYTHON) { $env:SEVERUS_BUILD_PYTHON } else { "python" }
 Write-Host "Build Python command: $pythonCmd"
+$appVersion = & $pythonCmd -c "from SeverusAI.constants import APP_VERSION; print(APP_VERSION)"
+if (-not $appVersion) {
+    throw "Unable to read the Severus AI version."
+}
+$appVersion = $appVersion.Trim()
 
 $pythonArch = & $pythonCmd -c "import platform, struct; print(platform.machine() + '|' + str(struct.calcsize('P') * 8))"
 $pythonArchParts = $pythonArch.Trim().Split("|")
@@ -22,11 +27,15 @@ Remove-Item -Recurse -Force ".\build" -ErrorAction SilentlyContinue
 Remove-Item -Recurse -Force ".\dist\SeverusAI" -ErrorAction SilentlyContinue
 Remove-Item -Force ".\dist\SeverusAI-Setup.exe" -ErrorAction SilentlyContinue
 
-& $pythonCmd -m pip install pyinstaller
+& $pythonCmd -m pip install --require-hashes -r ".\requirements.lock.txt"
+& $pythonCmd -m pip install --require-hashes -r ".\build-requirements.lock.txt"
 & $pythonCmd -m PyInstaller --noconfirm --windowed --onedir --noupx --name SeverusAI `
     --collect-data faster_whisper `
     --add-data "SeverusAI\dictation_begin.wav;SeverusAI" `
     --add-data "SeverusAI\reverse_dictation_end.mp3;SeverusAI" `
+    --add-data "SeverusAI\status_processing.mp3;SeverusAI" `
+    --add-data "SeverusAI\status_success.mp3;SeverusAI" `
+    --add-data "SeverusAI\status_failure.mp3;SeverusAI" `
     .\launcher.py
 
 if (-not (Test-Path ".\dist\SeverusAI\SeverusAI.exe")) {
@@ -76,6 +85,31 @@ if (-not (Test-Path $expectedPortAudio)) {
     throw "Build failed: expected PortAudio binary was not packaged at '$expectedPortAudio'."
 }
 
+function Find-SignTool {
+    $windowsKits = "C:\Program Files (x86)\Windows Kits\10\bin"
+    if (-not (Test-Path $windowsKits)) {
+        return $null
+    }
+    return Get-ChildItem -Path $windowsKits -Filter "signtool.exe" -Recurse -ErrorAction SilentlyContinue |
+        Where-Object { $_.FullName -match '\\x64\\signtool\.exe$' } |
+        Sort-Object FullName -Descending |
+        Select-Object -First 1
+}
+
+$signingThumbprint = $env:SEVERUS_SIGNING_CERT_SHA1
+$signTool = $null
+if ($signingThumbprint) {
+    $signTool = Find-SignTool
+    if (-not $signTool) {
+        throw "SEVERUS_SIGNING_CERT_SHA1 is set, but signtool.exe was not found."
+    }
+    & $signTool.FullName sign /sha1 $signingThumbprint /fd SHA256 /tr "http://timestamp.digicert.com" /td SHA256 `
+        ".\dist\SeverusAI\SeverusAI.exe"
+    if ($LASTEXITCODE -ne 0) {
+        throw "Code signing failed for SeverusAI.exe."
+    }
+}
+
 $isccCandidates = @(
     "C:\Program Files (x86)\Inno Setup 6\ISCC.exe",
     "C:\Program Files\Inno Setup 6\ISCC.exe",
@@ -97,10 +131,18 @@ if (-not $iscc) {
     exit 0
 }
 
-& $iscc ".\installer.iss"
+& $iscc "/DAppVersion=$appVersion" ".\installer.iss"
 
 if (-not (Test-Path ".\dist\SeverusAI-Setup.exe")) {
     throw "Installer build failed: .\dist\SeverusAI-Setup.exe was not created."
+}
+
+if ($signingThumbprint) {
+    & $signTool.FullName sign /sha1 $signingThumbprint /fd SHA256 /tr "http://timestamp.digicert.com" /td SHA256 `
+        ".\dist\SeverusAI-Setup.exe"
+    if ($LASTEXITCODE -ne 0) {
+        throw "Code signing failed for SeverusAI-Setup.exe."
+    }
 }
 
 Write-Host "EXE build completed: .\dist\SeverusAI\SeverusAI.exe"

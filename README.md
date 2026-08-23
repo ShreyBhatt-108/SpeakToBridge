@@ -12,6 +12,13 @@ Windows-only local dictation app built with PySide6 + faster-whisper.
   - while recording, other system audio is ducked and restored automatically when recording stops
   - `dictation_begin.wav` plays on start
   - `reverse_dictation_end.mp3` plays when you end dictation
+  - recording is capped at 300 seconds by default so an accidentally abandoned recording cannot consume memory indefinitely
+  - the recording limit can be changed from 30 to 3600 seconds under **Show More Settings > Recording Limit**
+- Accessible feedback:
+  - status changes emit polite Qt accessibility announcements for screen readers
+  - Runtime Status is a read-only, wrapped text area that exposes its current value to JAWS
+  - press `Alt+S` in Settings to focus Runtime Status, then use normal text-reading commands
+  - distinct short cues identify processing, successful insertion, and failure
 - Read aloud:
   - press `Ctrl+F8` to have the Windows system voice read the last dictated transcript
 - Word Bank:
@@ -29,6 +36,12 @@ Windows-only local dictation app built with PySide6 + faster-whisper.
 - English-only dictation.
 - Default microphone only.
 - Clipboard safety: existing clipboard text is backed up before paste and restored right after insertion.
+- Settings follow the native Windows palette and font, including dark and high-contrast themes.
+- Destructive and unsaved-change safeguards:
+  - cached models require confirmation before deletion
+  - Word Bank edits are marked unsaved and prompt to save before closing or quitting
+  - uninstalling preserves configuration, the Word Bank, statistics, logs, and downloaded models in `%LOCALAPPDATA%\SeverusAI`
+- Dictation Stats includes an **Overall total** field showing words and clips across every session. It is stored in `%LOCALAPPDATA%\SeverusAI\stats.json` and is a single keyboard-accessible JAWS stop.
 
 ## Release notes (v1.1.2)
 
@@ -57,10 +70,22 @@ This update focuses on making everyday dictation use more reliable and less conf
   - examples: `one, ... two, ... three, ...` and `first law, one, ... two, ...`
   - intro text before the list and trailing text after the list are preserved
 
+## Release notes (v1.2.0)
+
+- Added a persistent overall word and clip count across application restarts.
+- Reworked Runtime Status as a wrapped, keyboard-focusable text control for more reliable JAWS reading; `Alt+S` focuses it directly.
+- Added polite screen-reader status announcements and distinct processing, success, and failure sounds.
+- Added a configurable recording limit with an independent in-memory audio cap.
+- Adopted native Windows fonts, colors, high contrast, dark mode, and focus behavior.
+- Added confirmation before cached-model deletion and unsaved Word Bank warnings.
+- Preserved settings, models, statistics, logs, and the Word Bank during uninstall.
+- Moved read-aloud transcript transfer from the process command line to standard input.
+- Added validated settings, pinned and hash-locked dependencies, vulnerability-audited build inputs, and optional Authenticode signing support.
+
 ## Run from source
 
 ```powershell
-pip install -r requirements.txt
+pip install --require-hashes -r requirements.lock.txt
 python -m SeverusAI
 ```
 
@@ -76,11 +101,17 @@ Outputs:
 
 If Inno Setup is not installed, the script still builds the EXE and tells you installer generation was skipped.
 
+Builds install from hashed runtime and build lock files. To Authenticode-sign both the application executable and installer, install the Windows SDK and set `SEVERUS_SIGNING_CERT_SHA1` to the SHA-1 thumbprint of an available code-signing certificate before running `build.ps1`. Without that certificate, local builds remain unsigned.
+
 ## Notes
 
 - Faster Whisper model files are downloaded on first use and cached in local app data.
 - Runtime is offline after model download unless you choose a new model that is not yet cached.
 - The app runs as a single instance to prevent duplicate global listeners and duplicate paste behavior.
+- Read-aloud text is sent to Windows PowerShell through standard input rather than included in the process command line.
+- Uninstall leaves `%LOCALAPPDATA%\SeverusAI` intact. Remove that folder manually only when you intentionally want to erase settings, models, the Word Bank, logs, and statistics.
+- `SeverusAI/constants.py` is the application version source. Packaging reads that value rather than maintaining a separate installer version.
+- Third-party feedback-sound provenance is recorded in `THIRD_PARTY_ASSETS.md`.
 
 ## Developer notes
 

@@ -35,3 +35,7 @@ def get_log_dir() -> Path:
     log_dir = get_app_data_dir() / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
     return log_dir
+
+
+def get_stats_path() -> Path:
+    return get_app_data_dir() / "stats.json"

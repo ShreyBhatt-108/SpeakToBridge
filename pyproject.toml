@@ -4,19 +4,19 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "severus-ai"
-version = "1.1.0"
+dynamic = ["version"]
 description = "Screen-reader-friendly local Whisper dictation app for Windows."
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
-  "PySide6>=6.7.0",
-  "faster-whisper>=1.0.3",
-  "sounddevice>=0.4.7",
-  "numpy>=1.26.0",
-  "pynput>=1.7.7",
-  "pyperclip>=1.9.0",
-  "pycaw>=20240210",
-  "comtypes>=1.4.5",
+  "PySide6==6.11.0",
+  "faster-whisper==1.2.1",
+  "sounddevice==0.5.5",
+  "numpy==2.4.4",
+  "pynput==1.8.1",
+  "pyperclip==1.11.0",
+  "pycaw==20251023",
+  "comtypes==1.4.16",
 ]
 
 [project.scripts]
@@ -24,3 +24,9 @@ severus-ai = "SeverusAI.app:run"
 
 [tool.setuptools]
 packages = ["SeverusAI"]
+
+[tool.setuptools.package-data]
+SeverusAI = ["*.wav", "*.mp3"]
+
+[tool.setuptools.dynamic]
+version = {attr = "SeverusAI.constants.APP_VERSION"}

@@ -1,7 +1,10 @@
 [Setup]
 AppId={{D1A780CB-B9C6-4F0B-9FF6-EEA4D2EC8D66}
 AppName=Severus AI
-AppVersion=1.1.2
+#ifndef AppVersion
+  #error AppVersion must be supplied by build.ps1 from SeverusAI.constants.APP_VERSION
+#endif
+AppVersion={#AppVersion}
 AppPublisher=Shrey Bhatt
 AppCopyright=Copyright (C) 2026 Shrey Bhatt
 DefaultDirName={autopf}\SeverusAI
@@ -39,7 +42,6 @@ Filename: "{app}\SeverusAI.exe"; Description: "Launch Severus AI"; Flags: nowait
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{app}"
-Type: filesandordirs; Name: "{localappdata}\SeverusAI"
 
 [Code]
 procedure ForceCleanupPath(const Target: string);
@@ -62,6 +64,5 @@ begin
   if CurUninstallStep = usPostUninstall then
   begin
     ForceCleanupPath(ExpandConstant('{app}'));
-    ForceCleanupPath(ExpandConstant('{localappdata}\SeverusAI'));
   end;
 end;
