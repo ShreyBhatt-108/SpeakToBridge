@@ -1,127 +1,184 @@
 # Severus AI
 
-Windows-only local dictation app built with PySide6 + faster-whisper.
+An accessible, privacy-conscious dictation application for Windows.
 
-## v1 behavior
+Severus AI records speech on demand, transcribes it locally with
+[faster-whisper](https://github.com/SYSTRAN/faster-whisper), and inserts the
+result into the application you are using. It was designed around keyboard and
+screen-reader access rather than treating accessibility as a later addition.
 
-- System tray app with Settings window.
-- Global activation hotkey is user-configurable in Settings (accessible modifier/key dropdowns for JAWS users).
-- Toggle-to-talk:
-  - press your configured activation hotkey to start recording
-  - press the same activation hotkey again to stop, transcribe, and auto-insert
-  - while recording, other system audio is ducked and restored automatically when recording stops
-  - `dictation_begin.wav` plays on start
-  - `reverse_dictation_end.mp3` plays when you end dictation
-  - recording is capped at 300 seconds by default so an accidentally abandoned recording cannot consume memory indefinitely
-  - the recording limit can be changed from 30 to 3600 seconds under **Show More Settings > Recording Limit**
-- Accessible feedback:
-  - status changes emit polite Qt accessibility announcements for screen readers
-  - Runtime Status is a read-only, wrapped text area that exposes its current value to JAWS
-  - press `Alt+S` in Settings to focus Runtime Status, then use normal text-reading commands
-  - distinct short cues identify processing, successful insertion, and failure
-- Read aloud:
-  - press `Ctrl+F8` to have the Windows system voice read the last dictated transcript
-- Word Bank:
-  - edit the Word Bank box in Settings
-  - use one mapping per line: `heard_word = CorrectWord`
-  - save to apply corrections to future transcripts (useful for names/proper nouns)
-- Model Storage:
-  - cached models are shown in Settings with size and readiness status
-  - old cached models can be deleted from Settings to free disk space
-- Local-only transcription after model download.
-- Pause-preserving VAD is enabled by default:
-  - it trims dead air after roughly `1000 ms` of silence and keeps padding around speech
-  - short and natural pauses are preserved so Whisper can still infer commas and periods from cadence
-- Default model is `small`.
-- English-only dictation.
-- Default microphone only.
-- Clipboard safety: existing clipboard text is backed up before paste and restored right after insertion.
-- Settings follow the native Windows palette and font, including dark and high-contrast themes.
-- Destructive and unsaved-change safeguards:
-  - cached models require confirmation before deletion
-  - Word Bank edits are marked unsaved and prompt to save before closing or quitting
-  - uninstalling preserves configuration, the Word Bank, statistics, logs, and downloaded models in `%LOCALAPPDATA%\SeverusAI`
-- Dictation Stats includes an **Overall total** field showing words and clips across every session. It is stored in `%LOCALAPPDATA%\SeverusAI\stats.json` and is a single keyboard-accessible JAWS stop.
+> **Project status:** Severus AI is a personal, independently developed project.
+> It currently supports Windows, English dictation, and the default microphone.
 
-## Release notes (v1.1.2)
+## Why this project exists
 
-This update focuses on making everyday dictation use more reliable and less confusing.
+Many dictation tools depend on cloud transcription or make their most important
+controls difficult to use with a screen reader. Severus AI explores a different
+approach: local transcription, predictable keyboard control, persistent user
+preferences, and status feedback that works with JAWS.
 
-- The extra settings panel now opens in a more natural place, directly after the `Show More Settings` controls area, instead of appearing unexpectedly in the middle of the page.
-- Hotkey handling is more robust for Windows key combinations:
-  - better handling of generic and left/right modifier key events
-  - improved support for combos like `Ctrl+Win`
-  - more reliable key-release handling to prevent stuck recording states
-- Dictation on/off behavior is stricter:
-  - when dictation is off, dictation and read-aloud shortcuts stay off
-  - prevents late transcript insertion after dictation has been disabled
-- Exit behavior is clearer:
-  - `Alt+F4` on the settings window minimizes Severus AI to tray
-  - the settings window now includes a dedicated `Quit Severus AI` button that fully shuts down the program
-- Word Bank behavior is smarter:
-  - keeps exact replacements
-  - adds local fuzzy matching for near-miss words/phrases
-  - uses dictionary context as a transcription prompt to improve recognition for names and special terms
-- Transcript cleanup is smarter by default:
-  - removes common filler words and stutter artifacts
-  - collapses accidental immediate word repeats
-  - reduces punctuation artifacts from pauses (such as extra commas)
-- Spoken numbered lists are now formatted into real numbered output when clear markers are detected:
-  - examples: `one, ... two, ... three, ...` and `first law, one, ... two, ...`
-  - intro text before the list and trailing text after the list are preserved
+## Highlights
 
-## Release notes (v1.2.0)
+- **Local transcription:** recorded audio stays on the computer after the
+  selected Whisper model has been downloaded.
+- **Keyboard-first operation:** a configurable global hotkey starts and stops
+  dictation without moving focus away from the current application.
+- **Screen-reader feedback:** Runtime Status is keyboard-focusable, exposes its
+  current value to accessibility tools, and emits polite status announcements.
+- **Sound cues:** short, distinct sounds identify processing, success, and
+  failure without requiring the user to inspect the window.
+- **Automatic insertion:** completed text is pasted into the active application
+  while preserving the user's existing clipboard text.
+- **Personal Word Bank:** custom corrections improve names, terminology, and
+  phrases that Whisper commonly mishears.
+- **Lifetime statistics:** the application tracks the total number of dictated
+  words and completed clips across sessions.
+- **Safety limits:** recording duration is configurable and independently capped
+  in memory to prevent an abandoned recording from growing indefinitely.
+- **Windows-aware presentation:** the interface follows native fonts, colours,
+  dark mode, high-contrast settings, and focus behaviour.
 
-- Added a persistent overall word and clip count across application restarts.
-- Reworked Runtime Status as a wrapped, keyboard-focusable text control for more reliable JAWS reading; `Alt+S` focuses it directly.
-- Added polite screen-reader status announcements and distinct processing, success, and failure sounds.
-- Added a configurable recording limit with an independent in-memory audio cap.
-- Adopted native Windows fonts, colors, high contrast, dark mode, and focus behavior.
-- Added confirmation before cached-model deletion and unsaved Word Bank warnings.
-- Preserved settings, models, statistics, logs, and the Word Bank during uninstall.
-- Moved read-aloud transcript transfer from the process command line to standard input.
-- Added validated settings, pinned and hash-locked dependencies, vulnerability-audited build inputs, and optional Authenticode signing support.
+## Accessibility
+
+Accessibility features include:
+
+- JAWS-readable labels, values, status updates, and keyboard focus order;
+- `Alt+S` to move directly to Runtime Status;
+- accessible controls for choosing the activation hotkey;
+- confirmation before deleting a downloaded model;
+- warnings before closing with unsaved Word Bank changes; and
+- a single keyboard stop for the overall word and clip count.
+
+Accessibility is an ongoing part of development. Bug reports describing the
+screen reader, keyboard sequence, expected result, and actual result are
+especially useful.
+
+## Install
+
+Download the current installer from
+[GitHub Releases](https://github.com/ShreyBhatt-108/SeverusAI/releases/latest),
+then run `SeverusAI-Setup.exe`.
+
+The current installer is not digitally signed, so Windows may display an
+unknown-publisher or SmartScreen warning. Verify that the download came from
+this repository's Releases page before running it.
+
+On first transcription, the selected Whisper model is downloaded and stored in
+local application data. Transcription can run offline after that model is ready.
+
+## Everyday use
+
+1. Open **Severus AI Settings** and choose an activation hotkey.
+2. Place the cursor in the application where text should appear.
+3. Press the activation hotkey to begin recording.
+4. Press it again to stop, transcribe, and insert the text.
+5. Press `Ctrl+F8` to have the Windows system voice read the most recent
+   transcript aloud.
+
+The default recording limit is 300 seconds. It can be set from 30 to 3,600
+seconds under **Show More Settings > Recording Limit**.
+
+### Word Bank
+
+Enter one correction per line:
+
+```text
+heard_word = CorrectWord
+```
+
+Save the Word Bank to apply those corrections to future transcripts.
+
+## Privacy and local data
+
+Speech is transcribed locally after the selected model has been downloaded.
+Read-aloud text is passed to Windows PowerShell through standard input rather
+than being placed on the process command line.
+
+Settings, models, logs, the Word Bank, and lifetime statistics are stored under:
+
+```text
+%LOCALAPPDATA%\SeverusAI
+```
+
+Uninstalling or upgrading the program preserves this folder. Delete it manually
+only when you intentionally want to remove all Severus AI user data.
 
 ## Run from source
 
+Python 3.11 or newer is required.
+
 ```powershell
-pip install --require-hashes -r requirements.lock.txt
+git clone https://github.com/ShreyBhatt-108/SeverusAI.git
+cd SeverusAI
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --require-hashes -r requirements.lock.txt
 python -m SeverusAI
 ```
 
-## Build portable EXE + Windows installer
+## Build the application
+
+Run the release build from PowerShell:
 
 ```powershell
 .\build.ps1
 ```
 
-Outputs:
-- `dist\SeverusAI\SeverusAI.exe` (portable app folder build)
-- `dist\SeverusAI-Setup.exe` (Windows installer, when Inno Setup 6 is installed)
+The script installs the hash-locked runtime and build dependencies, packages the
+application with PyInstaller, and uses Inno Setup 6 when available.
 
-If Inno Setup is not installed, the script still builds the EXE and tells you installer generation was skipped.
+Build outputs:
 
-Builds install from hashed runtime and build lock files. To Authenticode-sign both the application executable and installer, install the Windows SDK and set `SEVERUS_SIGNING_CERT_SHA1` to the SHA-1 thumbprint of an available code-signing certificate before running `build.ps1`. Without that certificate, local builds remain unsigned.
+- `dist\SeverusAI\SeverusAI.exe` — portable folder build;
+- `dist\SeverusAI-Setup.exe` — Windows installer.
 
-## Notes
+`SeverusAI/constants.py` is the single source of the application version. To
+Authenticode-sign a release, install the Windows SDK and set
+`SEVERUS_SIGNING_CERT_SHA1` to the thumbprint of an available code-signing
+certificate before running the build.
 
-- Faster Whisper model files are downloaded on first use and cached in local app data.
-- Runtime is offline after model download unless you choose a new model that is not yet cached.
-- The app runs as a single instance to prevent duplicate global listeners and duplicate paste behavior.
-- Read-aloud text is sent to Windows PowerShell through standard input rather than included in the process command line.
-- Uninstall leaves `%LOCALAPPDATA%\SeverusAI` intact. Remove that folder manually only when you intentionally want to erase settings, models, the Word Bank, logs, and statistics.
-- `SeverusAI/constants.py` is the application version source. Packaging reads that value rather than maintaining a separate installer version.
-- Third-party feedback-sound provenance is recorded in `THIRD_PARTY_ASSETS.md`.
+## Project structure
 
-## Developer notes
+```text
+SeverusAI/
+  app.py             Application startup and single-instance handling
+  controller.py      Dictation workflow and application coordination
+  audio.py           Microphone recording
+  ui.py              Settings window and accessible controls
+  config.py          Validated user settings
+  stats_store.py     Persistent word and clip totals
+  sound_feedback.py  Non-visual status cues
+build.ps1             Reproducible Windows release build
+installer.iss         Inno Setup installer definition
+```
 
-- `CODE_WALKTHROUGH_LOCAL.md` is intentionally local-only learning documentation.
-- It is ignored by Git and is not part of GitHub source history.
+The more detailed `CODE_WALKTHROUGH_LOCAL.md` is intentionally ignored by Git
+because it is the author's private learning documentation.
 
-## Credits
+## Release notes
 
-Created by Shrey Bhatt.
+Version 1.2.0 added persistent statistics, improved JAWS access to Runtime
+Status, status sounds, configurable recording limits, native Windows display
+behaviour, safer settings, protected user data during uninstall, and a hardened
+release process. See [all releases](https://github.com/ShreyBhatt-108/SeverusAI/releases)
+for downloadable builds and release history.
 
-Developed with assistance from OpenAI Codex.
+## Authorship and AI assistance
 
-Core stack: Python, PySide6, OpenAI Whisper (faster-whisper runtime).
+Severus AI was conceived, directed, tested, and published by **Shrey Bhatt**.
+OpenAI Codex assisted with code review, implementation, documentation, testing,
+and release preparation. Shrey Bhatt remains responsible for the project's
+design decisions, quality, security, licensing, and published releases.
+
+## Copyright and licensing
+
+Copyright © 2026 Shrey Bhatt. All rights reserved.
+
+The Severus AI source code is publicly viewable, but no permission to copy,
+modify, or redistribute it is granted except where required by the licenses of
+its third-party components. See [LICENSE](LICENSE) for the project terms and
+[THIRD_PARTY_ASSETS.md](THIRD_PARTY_ASSETS.md) for bundled sound provenance.
+
+Python packages and other third-party components remain subject to their own
+licenses. The names and trademarks of third parties belong to their respective
+owners.
