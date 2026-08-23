@@ -366,9 +366,27 @@ class DictationController(QObject):
             flags=re.IGNORECASE,
         )
 
-        commandized = re.sub(r"\bstart\s+list\b", f"\n{marker_start}\n", commandized, flags=re.IGNORECASE)
-        commandized = re.sub(r"\bend\s+list\b", f"\n{marker_end}\n", commandized, flags=re.IGNORECASE)
-        commandized = re.sub(r"\bnew\s+line\b", "\n", commandized, flags=re.IGNORECASE)
+        # Whisper commonly surrounds spoken commands with inferred punctuation,
+        # for example "Start list. 1. ..." or ", new line,". Treat that
+        # punctuation as part of the command rather than as dictated content.
+        commandized = re.sub(
+            r"[ \t]*[,;:]?[ \t]*\bstart\s+list\b[ \t]*[.,;:]?[ \t]*",
+            f"\n{marker_start}\n",
+            commandized,
+            flags=re.IGNORECASE,
+        )
+        commandized = re.sub(
+            r"[ \t]*[,;:]?[ \t]*\bend\s+list\b[ \t]*[.,;:]?[ \t]*",
+            f"\n{marker_end}\n",
+            commandized,
+            flags=re.IGNORECASE,
+        )
+        commandized = re.sub(
+            r"[ \t]*[,;:]?[ \t]*\bnew\s+line\b[ \t]*[,;:]?[ \t]*",
+            "\n",
+            commandized,
+            flags=re.IGNORECASE,
+        )
         # Avoid punctuation junk right before list start.
         commandized = re.sub(r"[,\-;]\s*\n" + re.escape(marker_start), "\n" + marker_start, commandized)
 
@@ -380,6 +398,8 @@ class DictationController(QObject):
                 if rendered_lines and rendered_lines[-1] != "":
                     rendered_lines.append("")
                 continue
+            if re.fullmatch(r"[,.;:!?-]+", line):
+                continue
             if line == marker_start:
                 list_mode = True
                 continue
@@ -388,15 +408,17 @@ class DictationController(QObject):
                 continue
 
             if list_mode:
+                # Convert inline numbered items into a real multi-line list,
+                # whether Whisper emitted "one," or the punctuation form "1.".
+                inline_numbered = DictationController._extract_inline_spoken_numbered_items(line)
+                if inline_numbered:
+                    for item_no, content in inline_numbered:
+                        rendered_lines.append(f"{item_no}. {content}")
+                    continue
+
                 if re.match(r"^(\d+\.\s+|[-*]\s+)", line):
                     rendered_lines.append(line)
                 else:
-                    # Convert inline spoken numbered items into real multi-line numbered list.
-                    inline_numbered = DictationController._extract_inline_spoken_numbered_items(line)
-                    if inline_numbered:
-                        for item_no, content in inline_numbered:
-                            rendered_lines.append(f"{item_no}. {content}")
-                        continue
 
                     # If user did not explicitly say "new line" between items,
                     # split common spoken list separators into separate bullets.
@@ -421,17 +443,24 @@ class DictationController(QObject):
 
     @staticmethod
     def _extract_inline_spoken_numbered_items(line: str) -> list[tuple[int, str]]:
-        token_re = re.compile(r"\b(one|two|three|four|five|six|seven|eight|nine)\b[\s,:;-]*", re.IGNORECASE)
+        token_re = re.compile(
+            r"(?<!\w)([1-9]|one|two|three|four|five|six|seven|eight|nine)"
+            r"(?:\b|(?=\D))[\s).,:;-]*",
+            re.IGNORECASE,
+        )
         matches = list(token_re.finditer(line))
         if len(matches) < 2:
             return []
 
         items: list[tuple[int, str]] = []
         for i, match in enumerate(matches):
-            word = match.group(1).lower()
-            if word not in SPOKEN_NUMBER_WORDS:
+            marker = match.group(1).lower()
+            if marker.isdigit():
+                item_no = int(marker)
+            elif marker in SPOKEN_NUMBER_WORDS:
+                item_no = SPOKEN_NUMBER_WORDS.index(marker) + 1
+            else:
                 continue
-            item_no = SPOKEN_NUMBER_WORDS.index(word) + 1
             start = match.end()
             end = matches[i + 1].start() if i + 1 < len(matches) else len(line)
             content = line[start:end].strip(" \t\r\n,;:-")

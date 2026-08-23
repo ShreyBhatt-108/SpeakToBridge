@@ -80,6 +80,21 @@ local application data. Transcription can run offline after that model is ready.
 The default recording limit is 300 seconds. It can be set from 30 to 3,600
 seconds under **Show More Settings > Recording Limit**.
 
+### Spoken formatting commands
+
+- Say `new line` to insert a line break. Say it twice for a blank line between
+  paragraphs.
+- Say `start list`, dictate items separated by commas, semicolons, `and`, or
+  `then`, and say `end list` to create bullets.
+- For a numbered list, use sequential markers from one through nine between
+  `start list` and `end list`, for example: `one, first item, two, second item`.
+- Use `open quote` and `close quote` (or `quote` and `unquote`) around quoted
+  text.
+
+Whisper may infer punctuation around these phrases; Speak to Bridge removes
+that command punctuation before formatting. Editing phrases such as `scratch
+that`, `delete that`, and `undo` are not currently implemented.
+
 ### Word Bank
 
 Enter one correction per line:
@@ -159,14 +174,14 @@ because it is the author's private learning documentation.
 
 ## Release notes
 
-Version 1.3.0 renamed the application to Speak to Bridge and added the
-“Speak. Bridge. Done.” welcome message. It preserves the installer identity for
-smooth upgrades and attempts to migrate existing local data. Version 1.2.0
-added persistent statistics, improved JAWS access to Runtime Status, status
-sounds, configurable recording limits, native Windows display behaviour, safer
-settings, protected user data during uninstall, and a hardened release process.
-See [all releases](https://github.com/ShreyBhatt-108/SpeakToBridge/releases) for
-downloadable builds and release history.
+Version 1.3.1 made spoken list and line-break commands resilient to punctuation
+inferred by Whisper and correctly separates inline numbered items. Version
+1.3.0 introduced the Speak to Bridge name and “Speak. Bridge. Done.” welcome
+message. Version 1.2.0 added persistent statistics, improved JAWS access to
+Runtime Status, status sounds, configurable recording limits, native Windows
+display behaviour, safer settings, protected user data during uninstall, and a
+hardened release process. See [all releases](https://github.com/ShreyBhatt-108/SpeakToBridge/releases)
+for downloadable builds and release history.
 
 ## Authorship and AI assistance
 
