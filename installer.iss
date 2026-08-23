@@ -21,7 +21,7 @@ PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
 UninstallDisplayIcon={app}\SpeakToBridge.exe
 CloseApplications=force
-CloseApplicationsFilter=SpeakToBridge.exe,SeverusAI.exe
+CloseApplicationsFilter=SpeakToBridge.exe
 RestartApplications=no
 SetupLogging=yes
 
@@ -33,12 +33,6 @@ Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription:
 
 [Files]
 Source: "dist\SpeakToBridge\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
-
-[InstallDelete]
-Type: files; Name: "{app}\SeverusAI.exe"
-Type: filesandordirs; Name: "{app}\_internal\SeverusAI"
-Type: filesandordirs; Name: "{autoprograms}\Severus AI"
-Type: files; Name: "{autodesktop}\Severus AI.lnk"
 
 [Icons]
 Name: "{group}\Speak to Bridge"; Filename: "{app}\SpeakToBridge.exe"

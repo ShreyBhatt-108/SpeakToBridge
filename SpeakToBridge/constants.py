@@ -1,7 +1,6 @@
 APP_NAME = "Speak to Bridge"
 APP_TAGLINE = "Speak. Bridge. Done."
 APP_ORG = "SpeakToBridge"
-LEGACY_APP_ORG = "SeverusAI"
 APP_AUTHOR = "Shrey Bhatt"
 APP_COPYRIGHT = "Copyright (C) 2026 Shrey Bhatt"
 APP_VERSION = "1.3.0"

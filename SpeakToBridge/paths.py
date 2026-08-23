@@ -3,20 +3,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from .constants import APP_ORG, LEGACY_APP_ORG
-
-
-def _migrate_legacy_app_data(base: Path, app_dir: Path) -> None:
-    """Move pre-rename user data into the current application directory."""
-    legacy_dir = base / LEGACY_APP_ORG
-    if app_dir.exists() or not legacy_dir.exists():
-        return
-    try:
-        legacy_dir.rename(app_dir)
-    except OSError:
-        # A blocked migration must not prevent the renamed application from
-        # starting with a clean data directory.
-        return
+from .constants import APP_ORG
 
 
 def get_app_data_dir() -> Path:
@@ -26,7 +13,6 @@ def get_app_data_dir() -> Path:
     else:
         base = Path.home() / "AppData" / "Local"
     app_dir = base / APP_ORG
-    _migrate_legacy_app_data(base, app_dir)
     app_dir.mkdir(parents=True, exist_ok=True)
     return app_dir
 

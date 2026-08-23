@@ -105,10 +105,6 @@ Settings, models, logs, the Word Bank, and lifetime statistics are stored under:
 Uninstalling or upgrading the program preserves this folder. Delete it manually
 only when you intentionally want to remove all Speak to Bridge user data.
 
-When upgrading from the former Severus AI name, Speak to Bridge attempts to move
-the existing local-data folder automatically. If Windows blocks that move, the
-renamed app starts with clean settings rather than failing to launch.
-
 ## Run from source
 
 Python 3.11 or newer is required.
