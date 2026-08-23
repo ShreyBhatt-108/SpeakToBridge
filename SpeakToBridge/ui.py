@@ -30,7 +30,13 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .constants import MAX_MAX_RECORDING_SECONDS, MIN_MAX_RECORDING_SECONDS, MODEL_CHOICES
+from .constants import (
+    APP_NAME,
+    APP_TAGLINE,
+    MAX_MAX_RECORDING_SECONDS,
+    MIN_MAX_RECORDING_SECONDS,
+    MODEL_CHOICES,
+)
 
 
 class SettingsWindow(QMainWindow):
@@ -52,7 +58,7 @@ class SettingsWindow(QMainWindow):
         initial_max_recording_seconds: int,
     ) -> None:
         super().__init__()
-        self.setWindowTitle("Severus AI Settings")
+        self.setWindowTitle(f"{APP_NAME} Settings")
         self.resize(820, 760)
         # Use the native Windows palette, font, focus indicators, dark mode, and
         # high-contrast behavior instead of overriding them with fixed colors.
@@ -61,6 +67,14 @@ class SettingsWindow(QMainWindow):
         root_layout = QVBoxLayout(central)
         root_layout.setContentsMargins(14, 14, 14, 14)
         root_layout.setSpacing(10)
+
+        welcome_label = QLabel(f"Welcome to {APP_NAME}\n{APP_TAGLINE}")
+        welcome_label.setWordWrap(True)
+        welcome_label.setAccessibleName(f"Welcome to {APP_NAME}. {APP_TAGLINE}")
+        welcome_label.setAccessibleDescription(
+            "Local, accessible dictation that carries your spoken words into the active application."
+        )
+        root_layout.addWidget(welcome_label)
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -317,7 +331,7 @@ class SettingsWindow(QMainWindow):
         self.lifetime_summary_value.setFocusPolicy(Qt.StrongFocus)
         self.lifetime_summary_value.setAccessibleName("Overall dictation total")
         self.lifetime_summary_value.setAccessibleDescription(
-            "All words and dictation clips recorded across every Severus AI session."
+            f"All words and dictation clips recorded across every {APP_NAME} session."
         )
         stats_form.addRow("Last transcript words:", self.last_words_value)
         stats_form.addRow("Session words:", self.total_words_value)
@@ -363,14 +377,14 @@ class SettingsWindow(QMainWindow):
         )
         self.dictation_toggle_button.clicked.connect(self._emit_dictation_toggle_requested)
         action_layout.addWidget(self.dictation_toggle_button, 0, 1)
-        self.quit_button = QPushButton("Quit Severus AI")
-        self.quit_button.setAccessibleName("Quit Severus AI")
+        self.quit_button = QPushButton(f"Quit {APP_NAME}")
+        self.quit_button.setAccessibleName(f"Quit {APP_NAME}")
         self.quit_button.setAccessibleDescription("This button shuts down the program.")
         self.quit_button.clicked.connect(self._emit_quit_requested)
         action_layout.addWidget(self.quit_button, 1, 0)
         self.close_to_tray_button = QPushButton("Close Settings to Tray")
         self.close_to_tray_button.setAccessibleName("Close settings to tray")
-        self.close_to_tray_button.setAccessibleDescription("This button minimizes Severus AI to tray.")
+        self.close_to_tray_button.setAccessibleDescription(f"This button minimizes {APP_NAME} to tray.")
         self.close_to_tray_button.clicked.connect(self._request_close_to_tray)
         action_layout.addWidget(self.close_to_tray_button, 1, 1)
         body_layout.addWidget(action_group)
@@ -461,11 +475,15 @@ class SettingsWindow(QMainWindow):
         if enabled:
             self.dictation_toggle_button.setText("Disable Dictation")
             self.dictation_toggle_button.setAccessibleName("Disable dictation")
-            self.dictation_toggle_button.setAccessibleDescription("Turns Severus dictation shortcuts off.")
+            self.dictation_toggle_button.setAccessibleDescription(
+                f"Turns {APP_NAME} dictation shortcuts off."
+            )
         else:
             self.dictation_toggle_button.setText("Enable Dictation")
             self.dictation_toggle_button.setAccessibleName("Enable dictation")
-            self.dictation_toggle_button.setAccessibleDescription("Turns Severus dictation shortcuts on.")
+            self.dictation_toggle_button.setAccessibleDescription(
+                f"Turns {APP_NAME} dictation shortcuts on."
+            )
 
     def set_hotkey_value(self, hotkey_text: str) -> None:
         self.hotkey_value.setText(hotkey_text)

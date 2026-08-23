@@ -1,7 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 from PyInstaller.utils.hooks import collect_data_files
 
-datas = [('SeverusAI\\dictation_begin.wav', 'SeverusAI'), ('SeverusAI\\reverse_dictation_end.mp3', 'SeverusAI'), ('SeverusAI\\status_processing.mp3', 'SeverusAI'), ('SeverusAI\\status_success.mp3', 'SeverusAI'), ('SeverusAI\\status_failure.mp3', 'SeverusAI')]
+datas = [('SpeakToBridge\\dictation_begin.wav', 'SpeakToBridge'), ('SpeakToBridge\\reverse_dictation_end.mp3', 'SpeakToBridge'), ('SpeakToBridge\\status_processing.mp3', 'SpeakToBridge'), ('SpeakToBridge\\status_success.mp3', 'SpeakToBridge'), ('SpeakToBridge\\status_failure.mp3', 'SpeakToBridge')]
 datas += collect_data_files('faster_whisper')
 
 
@@ -25,7 +25,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name='SeverusAI',
+    name='SpeakToBridge',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -44,5 +44,5 @@ coll = COLLECT(
     strip=False,
     upx=False,
     upx_exclude=[],
-    name='SeverusAI',
+    name='SpeakToBridge',
 )

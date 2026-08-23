@@ -1,4 +1,4 @@
-from SeverusAI.app import run
+from SpeakToBridge.app import run
 
 
 if __name__ == "__main__":

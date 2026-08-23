@@ -3,7 +3,7 @@ requires = ["setuptools>=68.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "severus-ai"
+name = "speak-to-bridge"
 dynamic = ["version"]
 description = "Screen-reader-friendly local Whisper dictation app for Windows."
 readme = "README.md"
@@ -20,13 +20,13 @@ dependencies = [
 ]
 
 [project.scripts]
-severus-ai = "SeverusAI.app:run"
+speak-to-bridge = "SpeakToBridge.app:run"
 
 [tool.setuptools]
-packages = ["SeverusAI"]
+packages = ["SpeakToBridge"]
 
 [tool.setuptools.package-data]
-SeverusAI = ["*.wav", "*.mp3"]
+SpeakToBridge = ["*.wav", "*.mp3"]
 
 [tool.setuptools.dynamic]
-version = {attr = "SeverusAI.constants.APP_VERSION"}
+version = {attr = "SpeakToBridge.constants.APP_VERSION"}

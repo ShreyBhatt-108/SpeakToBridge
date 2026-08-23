@@ -1,8 +1,10 @@
-APP_NAME = "Severus AI"
-APP_ORG = "SeverusAI"
+APP_NAME = "Speak to Bridge"
+APP_TAGLINE = "Speak. Bridge. Done."
+APP_ORG = "SpeakToBridge"
+LEGACY_APP_ORG = "SeverusAI"
 APP_AUTHOR = "Shrey Bhatt"
 APP_COPYRIGHT = "Copyright (C) 2026 Shrey Bhatt"
-APP_VERSION = "1.2.0"
+APP_VERSION = "1.3.0"
 
 MODEL_CHOICES = {
     "tiny": "tiny",

@@ -7,9 +7,9 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from SeverusAI.config import AppConfig, ConfigStore
-from SeverusAI.paths import get_config_path, get_model_cache_dir
-from SeverusAI.whisper_engine import WhisperEngine
+from SpeakToBridge.config import AppConfig, ConfigStore
+from SpeakToBridge.paths import get_config_path, get_model_cache_dir
+from SpeakToBridge.whisper_engine import WhisperEngine
 
 
 def main() -> int:

@@ -23,7 +23,7 @@ from .word_bank import WordBank
 
 LOGGER = logging.getLogger(__name__)
 _MUTEX_ALREADY_EXISTS = 183
-_SINGLE_INSTANCE_MUTEX_NAME = "Global\\SeverusAI_SingleInstance"
+_SINGLE_INSTANCE_MUTEX_NAME = "Global\\SpeakToBridge_SingleInstance"
 _single_instance_handle = None
 
 
@@ -39,7 +39,7 @@ def _acquire_single_instance_mutex():
     return handle, already_running
 
 
-class SeverusAIRuntime(QObject):
+class SpeakToBridgeRuntime(QObject):
     model_cache_entries_ready = Signal(object)
 
     def __init__(self, app: QApplication) -> None:
@@ -507,7 +507,7 @@ def run() -> int:
         QMessageBox.information(
             None,
             APP_NAME,
-            "Severus AI is already running. Open it from the system tray.",
+            f"{APP_NAME} is already running. Open it from the system tray.",
         )
         return 0
     app.setQuitOnLastWindowClosed(False)
@@ -516,6 +516,6 @@ def run() -> int:
         QMessageBox.critical(None, APP_NAME, "System tray is not available on this system.")
         return 1
 
-    runtime = SeverusAIRuntime(app)
+    runtime = SpeakToBridgeRuntime(app)
     runtime.show()
     return app.exec()

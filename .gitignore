@@ -27,4 +27,4 @@ CODE_WALKTHROUGH_LOCAL.md
 # Keep release scripts/config in source control
 !build.ps1
 !installer.iss
-!SeverusAI.spec
+!SpeakToBridge.spec

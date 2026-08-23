@@ -93,7 +93,7 @@ class AudioRecorder:
         except Exception as exc:  # pragma: no cover
             raise RuntimeError(
                 "Microphone audio backend could not be loaded. "
-                "Please reinstall SeverusAI using the correct Windows architecture build."
+                "Please reinstall Speak to Bridge using the correct Windows architecture build."
             ) from exc
         self._sd_module = sd
         return sd

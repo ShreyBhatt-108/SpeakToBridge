@@ -1,26 +1,27 @@
 [Setup]
 AppId={{D1A780CB-B9C6-4F0B-9FF6-EEA4D2EC8D66}
-AppName=Severus AI
+AppName=Speak to Bridge
 #ifndef AppVersion
-  #error AppVersion must be supplied by build.ps1 from SeverusAI.constants.APP_VERSION
+  #error AppVersion must be supplied by build.ps1 from SpeakToBridge.constants.APP_VERSION
 #endif
 AppVersion={#AppVersion}
 AppPublisher=Shrey Bhatt
 AppCopyright=Copyright (C) 2026 Shrey Bhatt
-DefaultDirName={autopf}\SeverusAI
-DefaultGroupName=Severus AI
+DefaultDirName={autopf}\SpeakToBridge
+DefaultGroupName=Speak to Bridge
+UsePreviousGroup=no
 DisableProgramGroupPage=yes
 OutputDir=dist
-OutputBaseFilename=SeverusAI-Setup
+OutputBaseFilename=SpeakToBridge-Setup
 Compression=lzma
 SolidCompression=yes
 WizardStyle=modern
 ArchitecturesInstallIn64BitMode=x64compatible
 PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
-UninstallDisplayIcon={app}\SeverusAI.exe
+UninstallDisplayIcon={app}\SpeakToBridge.exe
 CloseApplications=force
-CloseApplicationsFilter=SeverusAI.exe
+CloseApplicationsFilter=SpeakToBridge.exe,SeverusAI.exe
 RestartApplications=no
 SetupLogging=yes
 
@@ -31,14 +32,20 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Additional shortcuts:"; Flags: unchecked
 
 [Files]
-Source: "dist\SeverusAI\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "dist\SpeakToBridge\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+
+[InstallDelete]
+Type: files; Name: "{app}\SeverusAI.exe"
+Type: filesandordirs; Name: "{app}\_internal\SeverusAI"
+Type: filesandordirs; Name: "{autoprograms}\Severus AI"
+Type: files; Name: "{autodesktop}\Severus AI.lnk"
 
 [Icons]
-Name: "{group}\Severus AI"; Filename: "{app}\SeverusAI.exe"
-Name: "{autodesktop}\Severus AI"; Filename: "{app}\SeverusAI.exe"; Tasks: desktopicon
+Name: "{group}\Speak to Bridge"; Filename: "{app}\SpeakToBridge.exe"
+Name: "{autodesktop}\Speak to Bridge"; Filename: "{app}\SpeakToBridge.exe"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\SeverusAI.exe"; Description: "Launch Severus AI"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\SpeakToBridge.exe"; Description: "Launch Speak to Bridge"; Flags: nowait postinstall skipifsilent
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{app}"

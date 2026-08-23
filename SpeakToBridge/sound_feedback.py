@@ -17,7 +17,7 @@ class SoundFeedbackPlayer:
 
     def __init__(self) -> None:
         self._queue: queue.Queue[Path | None] = queue.Queue()
-        self._worker = threading.Thread(target=self._run, daemon=True, name="severus-sound-feedback")
+        self._worker = threading.Thread(target=self._run, daemon=True, name="speak-to-bridge-sound-feedback")
         self._worker.start()
 
     def play(self, sound_path: Path) -> None:
@@ -34,7 +34,7 @@ class SoundFeedbackPlayer:
             if sound_path is None:
                 return
             sequence += 1
-            self._play_blocking(sound_path, f"severuscue{sequence}")
+            self._play_blocking(sound_path, f"speaktobridgecue{sequence}")
 
     @staticmethod
     def _play_blocking(sound_path: Path, alias: str) -> None:

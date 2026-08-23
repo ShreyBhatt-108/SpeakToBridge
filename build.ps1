@@ -1,10 +1,10 @@
 $ErrorActionPreference = "Stop"
 
-$pythonCmd = if ($env:SEVERUS_BUILD_PYTHON) { $env:SEVERUS_BUILD_PYTHON } else { "python" }
+$pythonCmd = if ($env:SPEAK_TO_BRIDGE_BUILD_PYTHON) { $env:SPEAK_TO_BRIDGE_BUILD_PYTHON } else { "python" }
 Write-Host "Build Python command: $pythonCmd"
-$appVersion = & $pythonCmd -c "from SeverusAI.constants import APP_VERSION; print(APP_VERSION)"
+$appVersion = & $pythonCmd -c "from SpeakToBridge.constants import APP_VERSION; print(APP_VERSION)"
 if (-not $appVersion) {
-    throw "Unable to read the Severus AI version."
+    throw "Unable to read the Speak to Bridge version."
 }
 $appVersion = $appVersion.Trim()
 
@@ -16,7 +16,7 @@ $pointerBits = $pythonArchParts[1]
 Write-Host "Build Python architecture: machine=$machine, bits=$pointerBits"
 
 if ($pointerBits -ne "64") {
-    throw "SeverusAI Windows releases must be built with 64-bit Python."
+    throw "SpeakToBridge Windows releases must be built with 64-bit Python."
 }
 
 if ($machine -notin @("AMD64", "x86_64", "ARM64", "aarch64")) {
@@ -24,25 +24,25 @@ if ($machine -notin @("AMD64", "x86_64", "ARM64", "aarch64")) {
 }
 
 Remove-Item -Recurse -Force ".\build" -ErrorAction SilentlyContinue
-Remove-Item -Recurse -Force ".\dist\SeverusAI" -ErrorAction SilentlyContinue
-Remove-Item -Force ".\dist\SeverusAI-Setup.exe" -ErrorAction SilentlyContinue
+Remove-Item -Recurse -Force ".\dist\SpeakToBridge" -ErrorAction SilentlyContinue
+Remove-Item -Force ".\dist\SpeakToBridge-Setup.exe" -ErrorAction SilentlyContinue
 
 & $pythonCmd -m pip install --require-hashes -r ".\requirements.lock.txt"
 & $pythonCmd -m pip install --require-hashes -r ".\build-requirements.lock.txt"
-& $pythonCmd -m PyInstaller --noconfirm --windowed --onedir --noupx --name SeverusAI `
+& $pythonCmd -m PyInstaller --noconfirm --windowed --onedir --noupx --name SpeakToBridge `
     --collect-data faster_whisper `
-    --add-data "SeverusAI\dictation_begin.wav;SeverusAI" `
-    --add-data "SeverusAI\reverse_dictation_end.mp3;SeverusAI" `
-    --add-data "SeverusAI\status_processing.mp3;SeverusAI" `
-    --add-data "SeverusAI\status_success.mp3;SeverusAI" `
-    --add-data "SeverusAI\status_failure.mp3;SeverusAI" `
+    --add-data "SpeakToBridge\dictation_begin.wav;SpeakToBridge" `
+    --add-data "SpeakToBridge\reverse_dictation_end.mp3;SpeakToBridge" `
+    --add-data "SpeakToBridge\status_processing.mp3;SpeakToBridge" `
+    --add-data "SpeakToBridge\status_success.mp3;SpeakToBridge" `
+    --add-data "SpeakToBridge\status_failure.mp3;SpeakToBridge" `
     .\launcher.py
 
-if (-not (Test-Path ".\dist\SeverusAI\SeverusAI.exe")) {
-    throw "Build failed: .\dist\SeverusAI\SeverusAI.exe was not created."
+if (-not (Test-Path ".\dist\SpeakToBridge\SpeakToBridge.exe")) {
+    throw "Build failed: .\dist\SpeakToBridge\SpeakToBridge.exe was not created."
 }
 
-$portAudioDir = ".\dist\SeverusAI\_internal\_sounddevice_data\portaudio-binaries"
+$portAudioDir = ".\dist\SpeakToBridge\_internal\_sounddevice_data\portaudio-binaries"
 $soundDeviceVersion = & $pythonCmd -c "import sounddevice; print(sounddevice.__version__)"
 $pythonWheelVersion = & $pythonCmd -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"
 $portAudioDllName = if ($machine -in @("ARM64", "aarch64")) {
@@ -56,7 +56,7 @@ if (-not (Test-Path $expectedPortAudio)) {
     Write-Warning "Expected PortAudio binary '$portAudioDllName' was not packaged automatically. Fetching the matching official sounddevice wheel."
 
     $wheelPlatform = if ($machine -in @("ARM64", "aarch64")) { "win_arm64" } else { "win_amd64" }
-    $wheelDir = Join-Path $env:TEMP "SeverusAI-sounddevice-wheel"
+    $wheelDir = Join-Path $env:TEMP "SpeakToBridge-sounddevice-wheel"
     Remove-Item -Recurse -Force $wheelDir -ErrorAction SilentlyContinue
     New-Item -ItemType Directory -Path $wheelDir | Out-Null
 
@@ -96,17 +96,17 @@ function Find-SignTool {
         Select-Object -First 1
 }
 
-$signingThumbprint = $env:SEVERUS_SIGNING_CERT_SHA1
+$signingThumbprint = $env:SPEAK_TO_BRIDGE_SIGNING_CERT_SHA1
 $signTool = $null
 if ($signingThumbprint) {
     $signTool = Find-SignTool
     if (-not $signTool) {
-        throw "SEVERUS_SIGNING_CERT_SHA1 is set, but signtool.exe was not found."
+        throw "SPEAK_TO_BRIDGE_SIGNING_CERT_SHA1 is set, but signtool.exe was not found."
     }
     & $signTool.FullName sign /sha1 $signingThumbprint /fd SHA256 /tr "http://timestamp.digicert.com" /td SHA256 `
-        ".\dist\SeverusAI\SeverusAI.exe"
+        ".\dist\SpeakToBridge\SpeakToBridge.exe"
     if ($LASTEXITCODE -ne 0) {
-        throw "Code signing failed for SeverusAI.exe."
+        throw "Code signing failed for SpeakToBridge.exe."
     }
 }
 
@@ -126,24 +126,24 @@ foreach ($candidate in $isccCandidates) {
 
 if (-not $iscc) {
     Write-Warning "Inno Setup not found. EXE build completed, installer skipped."
-    Write-Host "EXE: .\dist\SeverusAI\SeverusAI.exe"
+    Write-Host "EXE: .\dist\SpeakToBridge\SpeakToBridge.exe"
     Write-Host "Install Inno Setup 6, then run: `"$pwd\build.ps1`" again to generate installer."
     exit 0
 }
 
 & $iscc "/DAppVersion=$appVersion" ".\installer.iss"
 
-if (-not (Test-Path ".\dist\SeverusAI-Setup.exe")) {
-    throw "Installer build failed: .\dist\SeverusAI-Setup.exe was not created."
+if (-not (Test-Path ".\dist\SpeakToBridge-Setup.exe")) {
+    throw "Installer build failed: .\dist\SpeakToBridge-Setup.exe was not created."
 }
 
 if ($signingThumbprint) {
     & $signTool.FullName sign /sha1 $signingThumbprint /fd SHA256 /tr "http://timestamp.digicert.com" /td SHA256 `
-        ".\dist\SeverusAI-Setup.exe"
+        ".\dist\SpeakToBridge-Setup.exe"
     if ($LASTEXITCODE -ne 0) {
-        throw "Code signing failed for SeverusAI-Setup.exe."
+        throw "Code signing failed for SpeakToBridge-Setup.exe."
     }
 }
 
-Write-Host "EXE build completed: .\dist\SeverusAI\SeverusAI.exe"
-Write-Host "Installer completed: .\dist\SeverusAI-Setup.exe"
+Write-Host "EXE build completed: .\dist\SpeakToBridge\SpeakToBridge.exe"
+Write-Host "Installer completed: .\dist\SpeakToBridge-Setup.exe"

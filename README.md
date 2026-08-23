@@ -1,19 +1,21 @@
-# Severus AI
+# Speak to Bridge
+
+> **Speak. Bridge. Done.**
 
 An accessible, privacy-conscious dictation application for Windows.
 
-Severus AI records speech on demand, transcribes it locally with
+Speak to Bridge records speech on demand, transcribes it locally with
 [faster-whisper](https://github.com/SYSTRAN/faster-whisper), and inserts the
 result into the application you are using. It was designed around keyboard and
 screen-reader access rather than treating accessibility as a later addition.
 
-> **Project status:** Severus AI is a personal, independently developed project.
+> **Project status:** Speak to Bridge is a personal, independently developed project.
 > It currently supports Windows, English dictation, and the default microphone.
 
 ## Why this project exists
 
 Many dictation tools depend on cloud transcription or make their most important
-controls difficult to use with a screen reader. Severus AI explores a different
+controls difficult to use with a screen reader. Speak to Bridge explores a different
 approach: local transcription, predictable keyboard control, persistent user
 preferences, and status feedback that works with JAWS.
 
@@ -56,8 +58,8 @@ especially useful.
 ## Install
 
 Download the current installer from
-[GitHub Releases](https://github.com/ShreyBhatt-108/SeverusAI/releases/latest),
-then run `SeverusAI-Setup.exe`.
+[GitHub Releases](https://github.com/ShreyBhatt-108/SpeakToBridge/releases/latest),
+then run `SpeakToBridge-Setup.exe`.
 
 The current installer is not digitally signed, so Windows may display an
 unknown-publisher or SmartScreen warning. Verify that the download came from
@@ -68,7 +70,7 @@ local application data. Transcription can run offline after that model is ready.
 
 ## Everyday use
 
-1. Open **Severus AI Settings** and choose an activation hotkey.
+1. Open **Speak to Bridge Settings** and choose an activation hotkey.
 2. Place the cursor in the application where text should appear.
 3. Press the activation hotkey to begin recording.
 4. Press it again to stop, transcribe, and insert the text.
@@ -97,23 +99,27 @@ than being placed on the process command line.
 Settings, models, logs, the Word Bank, and lifetime statistics are stored under:
 
 ```text
-%LOCALAPPDATA%\SeverusAI
+%LOCALAPPDATA%\SpeakToBridge
 ```
 
 Uninstalling or upgrading the program preserves this folder. Delete it manually
-only when you intentionally want to remove all Severus AI user data.
+only when you intentionally want to remove all Speak to Bridge user data.
+
+When upgrading from the former Severus AI name, Speak to Bridge attempts to move
+the existing local-data folder automatically. If Windows blocks that move, the
+renamed app starts with clean settings rather than failing to launch.
 
 ## Run from source
 
 Python 3.11 or newer is required.
 
 ```powershell
-git clone https://github.com/ShreyBhatt-108/SeverusAI.git
-cd SeverusAI
+git clone https://github.com/ShreyBhatt-108/SpeakToBridge.git
+cd SpeakToBridge
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --require-hashes -r requirements.lock.txt
-python -m SeverusAI
+python -m SpeakToBridge
 ```
 
 ## Build the application
@@ -129,18 +135,18 @@ application with PyInstaller, and uses Inno Setup 6 when available.
 
 Build outputs:
 
-- `dist\SeverusAI\SeverusAI.exe` — portable folder build;
-- `dist\SeverusAI-Setup.exe` — Windows installer.
+- `dist\SpeakToBridge\SpeakToBridge.exe` — portable folder build;
+- `dist\SpeakToBridge-Setup.exe` — Windows installer.
 
-`SeverusAI/constants.py` is the single source of the application version. To
+`SpeakToBridge/constants.py` is the single source of the application version. To
 Authenticode-sign a release, install the Windows SDK and set
-`SEVERUS_SIGNING_CERT_SHA1` to the thumbprint of an available code-signing
+`SPEAK_TO_BRIDGE_SIGNING_CERT_SHA1` to the thumbprint of an available code-signing
 certificate before running the build.
 
 ## Project structure
 
 ```text
-SeverusAI/
+SpeakToBridge/
   app.py             Application startup and single-instance handling
   controller.py      Dictation workflow and application coordination
   audio.py           Microphone recording
@@ -157,15 +163,18 @@ because it is the author's private learning documentation.
 
 ## Release notes
 
-Version 1.2.0 added persistent statistics, improved JAWS access to Runtime
-Status, status sounds, configurable recording limits, native Windows display
-behaviour, safer settings, protected user data during uninstall, and a hardened
-release process. See [all releases](https://github.com/ShreyBhatt-108/SeverusAI/releases)
-for downloadable builds and release history.
+Version 1.3.0 renamed the application to Speak to Bridge and added the
+“Speak. Bridge. Done.” welcome message. It preserves the installer identity for
+smooth upgrades and attempts to migrate existing local data. Version 1.2.0
+added persistent statistics, improved JAWS access to Runtime Status, status
+sounds, configurable recording limits, native Windows display behaviour, safer
+settings, protected user data during uninstall, and a hardened release process.
+See [all releases](https://github.com/ShreyBhatt-108/SpeakToBridge/releases) for
+downloadable builds and release history.
 
 ## Authorship and AI assistance
 
-Severus AI was conceived, directed, tested, and published by **Shrey Bhatt**.
+Speak to Bridge was conceived, directed, tested, and published by **Shrey Bhatt**.
 OpenAI Codex assisted with code review, implementation, documentation, testing,
 and release preparation. Shrey Bhatt remains responsible for the project's
 design decisions, quality, security, licensing, and published releases.
@@ -174,7 +183,7 @@ design decisions, quality, security, licensing, and published releases.
 
 Copyright © 2026 Shrey Bhatt. All rights reserved.
 
-The Severus AI source code is publicly viewable, but no permission to copy,
+The Speak to Bridge source code is publicly viewable, but no permission to copy,
 modify, or redistribute it is granted except where required by the licenses of
 its third-party components. See [LICENSE](LICENSE) for the project terms and
 [THIRD_PARTY_ASSETS.md](THIRD_PARTY_ASSETS.md) for bundled sound provenance.
