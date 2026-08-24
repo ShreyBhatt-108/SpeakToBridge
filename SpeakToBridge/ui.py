@@ -10,6 +10,7 @@ from PySide6.QtGui import (
     QTextCursor,
 )
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QFormLayout,
     QGridLayout,
@@ -46,6 +47,7 @@ class SettingsWindow(QMainWindow):
     hotkey_apply_requested = Signal(str)
     read_hotkey_apply_requested = Signal(str)
     recording_limit_apply_requested = Signal(int)
+    sound_effects_changed = Signal(bool)
     word_bank_save_requested = Signal(object)
     dictation_toggle_requested = Signal()
     quit_requested = Signal()
@@ -56,6 +58,7 @@ class SettingsWindow(QMainWindow):
         initial_hotkey: str,
         initial_read_hotkey: str,
         initial_max_recording_seconds: int,
+        initial_sound_effects_enabled: bool,
     ) -> None:
         super().__init__()
         self.setWindowTitle(f"{APP_NAME} Settings")
@@ -215,6 +218,25 @@ class SettingsWindow(QMainWindow):
         model_form.addRow("", model_help)
         body_layout.addWidget(model_group)
         body_layout.addWidget(hotkey_group)
+
+        sound_group = QGroupBox("Sound Effects")
+        sound_group.setAccessibleName("Sound effect settings")
+        sound_layout = QVBoxLayout(sound_group)
+        self.sound_effects_checkbox = QCheckBox("Play sound effects")
+        self.sound_effects_checkbox.setAccessibleName("Play sound effects")
+        self.sound_effects_checkbox.setAccessibleDescription(
+            "Controls the recording, processing, success, and failure sound cues. "
+            "Runtime Status remains available when sounds are off."
+        )
+        self.sound_effects_checkbox.setChecked(initial_sound_effects_enabled)
+        self.sound_effects_checkbox.toggled.connect(self.sound_effects_changed.emit)
+        sound_layout.addWidget(self.sound_effects_checkbox)
+        sound_help = QLabel(
+            "Turn off sound cues if you prefer to use Runtime Status alone. The setting is saved automatically."
+        )
+        sound_help.setWordWrap(True)
+        sound_layout.addWidget(sound_help)
+        body_layout.addWidget(sound_group)
 
         storage_group = QGroupBox("Model Storage")
         storage_group.setAccessibleName("Model storage")
@@ -414,7 +436,8 @@ class SettingsWindow(QMainWindow):
         self.setTabOrder(self.hotkey_apply_button, self.read_hotkey_modifier_combo)
         self.setTabOrder(self.read_hotkey_modifier_combo, self.read_hotkey_key_combo)
         self.setTabOrder(self.read_hotkey_key_combo, self.read_hotkey_apply_button)
-        self.setTabOrder(self.read_hotkey_apply_button, self.lifetime_summary_value)
+        self.setTabOrder(self.read_hotkey_apply_button, self.sound_effects_checkbox)
+        self.setTabOrder(self.sound_effects_checkbox, self.lifetime_summary_value)
         self.setTabOrder(self.lifetime_summary_value, self.status_value)
         self.setTabOrder(self.status_value, self.settings_toggle_button)
         self.setTabOrder(self.settings_toggle_button, self.dictation_toggle_button)
@@ -701,6 +724,12 @@ class SettingsWindow(QMainWindow):
 
     def confirm_pending_changes(self) -> bool:
         return self._confirm_unsaved_word_bank()
+
+    def save_pending_changes(self) -> bool:
+        """Persist in-window Word Bank edits without an uninstall-time prompt."""
+        if self._word_bank_dirty:
+            self._emit_word_bank_save_requested()
+        return not self._word_bank_dirty
 
     def showEvent(self, event) -> None:  # noqa: ANN001
         super().showEvent(event)

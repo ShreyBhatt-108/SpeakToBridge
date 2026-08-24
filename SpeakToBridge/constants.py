@@ -3,7 +3,7 @@ APP_TAGLINE = "Speak. Bridge. Done."
 APP_ORG = "SpeakToBridge"
 APP_AUTHOR = "Shrey Bhatt"
 APP_COPYRIGHT = "Copyright (C) 2026 Shrey Bhatt"
-APP_VERSION = "1.3.1"
+APP_VERSION = "1.4.0"
 
 MODEL_CHOICES = {
     "tiny": "tiny",

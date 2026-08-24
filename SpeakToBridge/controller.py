@@ -109,8 +109,19 @@ class DictationController(QObject):
         self._config.max_recording_seconds = int(seconds)
         self._recorder.set_max_duration_seconds(seconds)
 
+    def set_sound_effects_enabled(self, enabled: bool) -> None:
+        self._config.sound_effects_enabled = bool(enabled)
+
     def play_failure_feedback(self) -> None:
-        self._sound_feedback.play(FAILURE_SOUND)
+        self._play_feedback(FAILURE_SOUND)
+
+    def _play_feedback(self, sound_path: Path, *, wav: bool = False) -> None:
+        if not self._config.sound_effects_enabled:
+            return
+        if wav:
+            winsound.PlaySound(str(sound_path), winsound.SND_FILENAME | winsound.SND_ASYNC)
+        else:
+            self._sound_feedback.play(sound_path)
 
     def preload_model_async(self, model_name: str | None = None) -> None:
         with self._busy_lock:
@@ -138,7 +149,7 @@ class DictationController(QObject):
             self._audio_ducker.duck()
             self._recorder.start()
             self._recording_timer.start(self._config.max_recording_seconds * 1000)
-            winsound.PlaySound(str(DICTATION_BEGIN_SOUND), winsound.SND_FILENAME | winsound.SND_ASYNC)
+            self._play_feedback(DICTATION_BEGIN_SOUND, wav=True)
             self.recording_changed.emit(True)
             self.status_changed.emit(
                 f"Recording. Press {self._activation_hotkey_display} again to stop and transcribe. "
@@ -156,17 +167,17 @@ class DictationController(QObject):
         self._recording_timer.stop()
         audio = self._recorder.stop()
         self._audio_ducker.restore()
-        self._sound_feedback.play(DICTATION_END_SOUND)
+        self._play_feedback(DICTATION_END_SOUND)
         self.recording_changed.emit(False)
         if audio.size == 0:
-            self._sound_feedback.play(FAILURE_SOUND)
+            self._play_feedback(FAILURE_SOUND)
             self.status_changed.emit("No audio captured.")
             return
 
         with self._busy_lock:
             self._is_busy = True
         self.busy_changed.emit(True)
-        self._sound_feedback.play(PROCESSING_SOUND)
+        self._play_feedback(PROCESSING_SOUND)
         if maximum_reached:
             self.status_changed.emit("Maximum recording length reached. Recording stopped; transcribing locally...")
         else:
@@ -218,7 +229,7 @@ class DictationController(QObject):
             text = self._cleanup_transcript(text)
             text = self._finalize_transcript(text)
             if not text:
-                self._sound_feedback.play(FAILURE_SOUND)
+                self._play_feedback(FAILURE_SOUND)
                 self.status_changed.emit("No speech detected.")
                 return
             if not self._enabled:
@@ -233,7 +244,7 @@ class DictationController(QObject):
             if not inserted:
                 self.error_occurred.emit(msg)
             else:
-                self._sound_feedback.play(SUCCESS_SOUND)
+                self._play_feedback(SUCCESS_SOUND)
         except Exception as exc:  # pragma: no cover
             LOGGER.exception("Transcription flow failed")
             self.error_occurred.emit(f"Transcription failed ({exc}).")
@@ -251,7 +262,7 @@ class DictationController(QObject):
             self.status_changed.emit("Preparing selected model...")
             self._engine.warm_model()
             self.status_changed.emit("Model ready.")
-            self._sound_feedback.play(SUCCESS_SOUND)
+            self._play_feedback(SUCCESS_SOUND)
             self.model_preload_finished.emit(requested_model, True, "")
         except Exception as exc:  # pragma: no cover
             LOGGER.exception("Model preload failed")

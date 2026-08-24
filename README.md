@@ -27,8 +27,9 @@ preferences, and status feedback that works with JAWS.
   dictation without moving focus away from the current application.
 - **Screen-reader feedback:** Runtime Status is keyboard-focusable, exposes its
   current value to accessibility tools, and emits polite status announcements.
-- **Sound cues:** short, distinct sounds identify processing, success, and
-  failure without requiring the user to inspect the window.
+- **Optional sound cues:** short, distinct sounds identify recording,
+  processing, success, and failure without requiring the user to inspect the
+  window. Users can turn every cue off from Settings.
 - **Automatic insertion:** completed text is pasted into the active application
   while preserving the user's existing clipboard text.
 - **Personal Word Bank:** custom corrections improve names, terminology, and
@@ -79,6 +80,11 @@ local application data. Transcription can run offline after that model is ready.
 
 The default recording limit is 300 seconds. It can be set from 30 to 3,600
 seconds under **Show More Settings > Recording Limit**.
+
+The **Play sound effects** checkbox controls the recording, processing, success,
+and failure cues. It is enabled by default, takes effect immediately, and is
+remembered across restarts. Runtime Status continues to provide accessible text
+feedback when sounds are disabled.
 
 ### Spoken formatting commands
 
@@ -174,14 +180,15 @@ because it is the author's private learning documentation.
 
 ## Release notes
 
-Version 1.3.1 made spoken list and line-break commands resilient to punctuation
-inferred by Whisper and correctly separates inline numbered items. Version
-1.3.0 introduced the Speak to Bridge name and “Speak. Bridge. Done.” welcome
-message. Version 1.2.0 added persistent statistics, improved JAWS access to
-Runtime Status, status sounds, configurable recording limits, native Windows
-display behaviour, safer settings, protected user data during uninstall, and a
-hardened release process. See [all releases](https://github.com/ShreyBhatt-108/SpeakToBridge/releases)
-for downloadable builds and release history.
+Version 1.4.0 adds a persistent, accessible setting for disabling every sound
+cue while retaining Runtime Status feedback. It also closes a running tray
+instance before uninstalling, preventing locked program files and incomplete
+removal notices while continuing to preserve user data. Version 1.3.1 made
+spoken list and line-break commands resilient to punctuation inferred by
+Whisper. Version 1.3.0 introduced the Speak to Bridge name and “Speak. Bridge.
+Done.” welcome message. See
+[all releases](https://github.com/ShreyBhatt-108/SpeakToBridge/releases) for
+downloadable builds and release history.
 
 ## Authorship and AI assistance
 

@@ -37,6 +37,10 @@ def _validated_recording_limit(value: object, default: int) -> int:
     return max(MIN_MAX_RECORDING_SECONDS, min(MAX_MAX_RECORDING_SECONDS, candidate))
 
 
+def _validated_bool(value: object, default: bool) -> bool:
+    return value if isinstance(value, bool) else default
+
+
 @dataclass
 class AppConfig:
     model_name: str = DEFAULT_MODEL
@@ -46,6 +50,7 @@ class AppConfig:
     read_hotkey: str = DEFAULT_READ_HOTKEY
     vad_mode: str = DEFAULT_VAD_MODE
     max_recording_seconds: int = DEFAULT_MAX_RECORDING_SECONDS
+    sound_effects_enabled: bool = True
 
     @classmethod
     def from_dict(cls, data: dict) -> "AppConfig":
@@ -63,6 +68,9 @@ class AppConfig:
             vad_mode=_validated_string(data.get("vad_mode"), default.vad_mode, ALLOWED_VAD_MODES),
             max_recording_seconds=_validated_recording_limit(
                 data.get("max_recording_seconds"), default.max_recording_seconds
+            ),
+            sound_effects_enabled=_validated_bool(
+                data.get("sound_effects_enabled"), default.sound_effects_enabled
             ),
         )
 

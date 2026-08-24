@@ -6,7 +6,7 @@ import threading
 import ctypes
 from ctypes import wintypes
 
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import QObject, QTimer, Signal
 from PySide6.QtWidgets import QApplication, QMenu, QMessageBox, QStyle, QSystemTrayIcon
 
 from .config import AppConfig, ConfigStore
@@ -24,6 +24,11 @@ from .word_bank import WordBank
 LOGGER = logging.getLogger(__name__)
 _MUTEX_ALREADY_EXISTS = 183
 _SINGLE_INSTANCE_MUTEX_NAME = "Global\\SpeakToBridge_SingleInstance"
+_UNINSTALL_SHUTDOWN_EVENT_NAME = "Global\\SpeakToBridge_ShutdownForUninstall"
+_EVENT_MODIFY_STATE = 0x0002
+_SYNCHRONIZE = 0x00100000
+_WAIT_OBJECT_0 = 0
+_WAIT_ABANDONED = 0x00000080
 _single_instance_handle = None
 
 
@@ -32,11 +37,58 @@ def _acquire_single_instance_mutex():
     kernel32.CreateMutexW.argtypes = [wintypes.LPVOID, wintypes.BOOL, wintypes.LPCWSTR]
     kernel32.CreateMutexW.restype = wintypes.HANDLE
     kernel32.GetLastError.restype = wintypes.DWORD
-    handle = kernel32.CreateMutexW(None, False, _SINGLE_INSTANCE_MUTEX_NAME)
+    # Owning the mutex lets the uninstall helper wait until this process has
+    # fully exited before Inno Setup starts removing installed files.
+    handle = kernel32.CreateMutexW(None, True, _SINGLE_INSTANCE_MUTEX_NAME)
     if not handle:
         return None, False
     already_running = kernel32.GetLastError() == _MUTEX_ALREADY_EXISTS
     return handle, already_running
+
+
+def _create_uninstall_shutdown_event():
+    kernel32 = ctypes.windll.kernel32
+    kernel32.CreateEventW.argtypes = [wintypes.LPVOID, wintypes.BOOL, wintypes.BOOL, wintypes.LPCWSTR]
+    kernel32.CreateEventW.restype = wintypes.HANDLE
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel32.CloseHandle.restype = wintypes.BOOL
+    return kernel32.CreateEventW(None, False, False, _UNINSTALL_SHUTDOWN_EVENT_NAME)
+
+
+def _signal_shutdown_for_uninstall() -> int:
+    """Ask the running instance to exit, then wait until it releases its mutex."""
+    kernel32 = ctypes.windll.kernel32
+    kernel32.OpenEventW.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.LPCWSTR]
+    kernel32.OpenEventW.restype = wintypes.HANDLE
+    kernel32.OpenMutexW.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.LPCWSTR]
+    kernel32.OpenMutexW.restype = wintypes.HANDLE
+    kernel32.SetEvent.argtypes = [wintypes.HANDLE]
+    kernel32.SetEvent.restype = wintypes.BOOL
+    kernel32.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+    kernel32.WaitForSingleObject.restype = wintypes.DWORD
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+
+    event_handle = kernel32.OpenEventW(
+        _EVENT_MODIFY_STATE, False, _UNINSTALL_SHUTDOWN_EVENT_NAME
+    )
+    if not event_handle:
+        return 0
+
+    mutex_handle = kernel32.OpenMutexW(_SYNCHRONIZE, False, _SINGLE_INSTANCE_MUTEX_NAME)
+    try:
+        if not kernel32.SetEvent(event_handle):
+            return 1
+        if mutex_handle:
+            wait_result = kernel32.WaitForSingleObject(mutex_handle, 10_000)
+            # An owned mutex becomes abandoned when its process exits. That is
+            # the expected success result for this process-lifetime mutex.
+            if wait_result not in (_WAIT_OBJECT_0, _WAIT_ABANDONED):
+                return 1
+        return 0
+    finally:
+        if mutex_handle:
+            kernel32.CloseHandle(mutex_handle)
+        kernel32.CloseHandle(event_handle)
 
 
 class SpeakToBridgeRuntime(QObject):
@@ -59,6 +111,7 @@ class SpeakToBridgeRuntime(QObject):
             initial_hotkey=self._hotkey.activation_hotkey_display,
             initial_read_hotkey=self._hotkey.read_hotkey_display,
             initial_max_recording_seconds=self._config.max_recording_seconds,
+            initial_sound_effects_enabled=self._config.sound_effects_enabled,
         )
         self._controller = DictationController(
             config=self._config,
@@ -66,6 +119,12 @@ class SpeakToBridgeRuntime(QObject):
             word_bank=self._word_bank,
         )
         self._controller.set_activation_hotkey_display(self._hotkey.activation_hotkey_display)
+
+        self._uninstall_shutdown_event = _create_uninstall_shutdown_event()
+        self._uninstall_shutdown_timer = QTimer(self)
+        self._uninstall_shutdown_timer.setInterval(200)
+        self._uninstall_shutdown_timer.timeout.connect(self._check_uninstall_shutdown_request)
+        self._uninstall_shutdown_timer.start()
 
         self._tray = QSystemTrayIcon(self)
         self._dictation_enabled = True
@@ -144,6 +203,7 @@ class SpeakToBridgeRuntime(QObject):
         self._window.hotkey_apply_requested.connect(self._on_hotkey_changed)
         self._window.read_hotkey_apply_requested.connect(self._on_read_hotkey_changed)
         self._window.recording_limit_apply_requested.connect(self._on_recording_limit_changed)
+        self._window.sound_effects_changed.connect(self._on_sound_effects_changed)
         self._window.word_bank_save_requested.connect(self._on_word_bank_save_requested)
         self._window.dictation_toggle_requested.connect(self._toggle_dictation)
         self._window.quit_requested.connect(self.shutdown)
@@ -249,6 +309,15 @@ class SpeakToBridgeRuntime(QObject):
         self._set_status(
             f"Maximum recording length updated to {seconds} seconds. "
             "Longer recordings will stop and begin transcription automatically."
+        )
+
+    def _on_sound_effects_changed(self, enabled: bool) -> None:
+        self._config.sound_effects_enabled = enabled
+        self._controller.set_sound_effects_enabled(enabled)
+        self._config_store.save(self._config)
+        state = "enabled" if enabled else "disabled"
+        self._set_status(
+            f"Sound effects {state}. Runtime Status will continue to provide text feedback."
         )
 
     def _on_read_hotkey_changed(self, hotkey_text: str) -> None:
@@ -415,10 +484,29 @@ class SpeakToBridgeRuntime(QObject):
         self._sync_tray_state()
 
     def shutdown(self) -> None:
+        self._uninstall_shutdown_timer.stop()
+        if self._uninstall_shutdown_event:
+            ctypes.windll.kernel32.CloseHandle(self._uninstall_shutdown_event)
+            self._uninstall_shutdown_event = None
         self._hotkey.stop()
         self._controller.shutdown()
         self._tray.hide()
         self._app.quit()
+
+    def _check_uninstall_shutdown_request(self) -> None:
+        if not self._uninstall_shutdown_event:
+            return
+        kernel32 = ctypes.windll.kernel32
+        kernel32.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+        kernel32.WaitForSingleObject.restype = wintypes.DWORD
+        kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+        if kernel32.WaitForSingleObject(self._uninstall_shutdown_event, 0) != _WAIT_OBJECT_0:
+            return
+        # Preserve any Word Bank edits that have reached the UI before exiting.
+        self._window.save_pending_changes()
+        kernel32.CloseHandle(self._uninstall_shutdown_event)
+        self._uninstall_shutdown_event = None
+        self.shutdown()
 
     def _request_shutdown(self) -> None:
         if self._window.confirm_pending_changes():
@@ -497,6 +585,8 @@ class SpeakToBridgeRuntime(QObject):
 
 
 def run() -> int:
+    if "--shutdown-for-uninstall" in sys.argv[1:]:
+        return _signal_shutdown_for_uninstall()
     configure_logging()
     QApplication.setApplicationName(APP_NAME)
     QApplication.setApplicationVersion(APP_VERSION)
