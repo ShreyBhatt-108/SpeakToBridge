@@ -10,6 +10,30 @@ import numpy as np
 LOGGER = logging.getLogger(__name__)
 
 
+def assess_microphone_audio(audio: np.ndarray, sample_rate: int = 16_000) -> dict[str, float | str]:
+    """Return simple, explainable level diagnostics for a microphone test clip."""
+    samples = np.asarray(audio, dtype=np.float32).reshape(-1)
+    duration = len(samples) / sample_rate if sample_rate else 0.0
+    if samples.size == 0:
+        return {"duration": duration, "rms_dbfs": -120.0, "peak_dbfs": -120.0,
+                "clipping_percent": 0.0, "assessment": "No audio was captured. Check microphone permission and input selection."}
+    peak = float(np.max(np.abs(samples)))
+    rms = float(np.sqrt(np.mean(np.square(samples))))
+    rms_dbfs = 20 * float(np.log10(max(rms, 1e-6)))
+    peak_dbfs = 20 * float(np.log10(max(peak, 1e-6)))
+    clipping_percent = float(np.mean(np.abs(samples) >= 0.98) * 100)
+    if rms_dbfs < -45:
+        assessment = "Very quiet. Move closer to the microphone or raise its input level."
+    elif clipping_percent >= 0.1 or peak_dbfs > -0.3:
+        assessment = "Too loud or clipping. Lower microphone input level or move farther away."
+    elif rms_dbfs < -30:
+        assessment = "A little quiet, but usable. A modest input-level increase may improve recognition."
+    else:
+        assessment = "Good recording level for speech recognition."
+    return {"duration": duration, "rms_dbfs": rms_dbfs, "peak_dbfs": peak_dbfs,
+            "clipping_percent": clipping_percent, "assessment": assessment}
+
+
 class AudioRecorder:
     def __init__(self, sample_rate: int = 16_000, max_duration_seconds: int = 300) -> None:
         self.sample_rate = sample_rate

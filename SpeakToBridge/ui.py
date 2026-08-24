@@ -50,6 +50,8 @@ class SettingsWindow(QMainWindow):
     sound_effects_changed = Signal(bool)
     word_bank_save_requested = Signal(object)
     dictation_toggle_requested = Signal()
+    microphone_test_start_requested = Signal()
+    microphone_test_stop_requested = Signal()
     quit_requested = Signal()
 
     def __init__(
@@ -237,6 +239,50 @@ class SettingsWindow(QMainWindow):
         sound_help.setWordWrap(True)
         sound_layout.addWidget(sound_help)
         body_layout.addWidget(sound_group)
+
+        microphone_group = QGroupBox("Microphone Check")
+        microphone_group.setAccessibleName("Microphone quality and model accuracy check")
+        microphone_group.setAccessibleDescription(
+            "Records a short sample only for this check, reports microphone level and clipping, then compares "
+            "the local model transcript with the displayed test sentence. It does not insert text or change dictation statistics."
+        )
+        microphone_layout = QVBoxLayout(microphone_group)
+        microphone_help = QLabel(
+            "Test the default Windows microphone and this app's selected model without inserting anything into another app. "
+            "Select Start, say the test sentence, then select Stop and Analyze."
+        )
+        microphone_help.setWordWrap(True)
+        microphone_layout.addWidget(microphone_help)
+        self.microphone_test_phrase_value = QLineEdit("The quick brown fox jumps over the lazy dog.")
+        self.microphone_test_phrase_value.setReadOnly(True)
+        self.microphone_test_phrase_value.setAccessibleName("Microphone test sentence")
+        self.microphone_test_phrase_value.setAccessibleDescription("Read this sentence aloud during the microphone test.")
+        microphone_layout.addWidget(QLabel("Say this sentence:"))
+        microphone_layout.addWidget(self.microphone_test_phrase_value)
+        microphone_actions = QHBoxLayout()
+        self.microphone_test_start_button = QPushButton("Start Microphone Test")
+        self.microphone_test_start_button.setAccessibleName("Start microphone test recording")
+        self.microphone_test_start_button.setAccessibleDescription(
+            "Starts a private microphone test. Read the displayed sentence, then use Stop and Analyze."
+        )
+        self.microphone_test_start_button.clicked.connect(self.microphone_test_start_requested.emit)
+        self.microphone_test_stop_button = QPushButton("Stop and Analyze")
+        self.microphone_test_stop_button.setAccessibleName("Stop microphone test and analyze it")
+        self.microphone_test_stop_button.setAccessibleDescription(
+            "Stops recording and measures audio level, clipping, and the local model's word accuracy."
+        )
+        self.microphone_test_stop_button.setEnabled(False)
+        self.microphone_test_stop_button.clicked.connect(self.microphone_test_stop_requested.emit)
+        microphone_actions.addWidget(self.microphone_test_start_button)
+        microphone_actions.addWidget(self.microphone_test_stop_button)
+        microphone_layout.addLayout(microphone_actions)
+        self.microphone_test_result = QPlainTextEdit("No microphone test has been run.")
+        self.microphone_test_result.setReadOnly(True)
+        self.microphone_test_result.setMinimumHeight(110)
+        self.microphone_test_result.setAccessibleName("Microphone test result")
+        self.microphone_test_result.setAccessibleDescription("Audio level, clipping, recognition accuracy, and transcript from the microphone test.")
+        microphone_layout.addWidget(self.microphone_test_result)
+        body_layout.addWidget(microphone_group)
 
         storage_group = QGroupBox("Model Storage")
         storage_group.setAccessibleName("Model storage")
@@ -438,6 +484,11 @@ class SettingsWindow(QMainWindow):
         self.setTabOrder(self.read_hotkey_key_combo, self.read_hotkey_apply_button)
         self.setTabOrder(self.read_hotkey_apply_button, self.sound_effects_checkbox)
         self.setTabOrder(self.sound_effects_checkbox, self.lifetime_summary_value)
+        self.setTabOrder(self.sound_effects_checkbox, self.microphone_test_phrase_value)
+        self.setTabOrder(self.microphone_test_phrase_value, self.microphone_test_start_button)
+        self.setTabOrder(self.microphone_test_start_button, self.microphone_test_stop_button)
+        self.setTabOrder(self.microphone_test_stop_button, self.microphone_test_result)
+        self.setTabOrder(self.microphone_test_result, self.lifetime_summary_value)
         self.setTabOrder(self.lifetime_summary_value, self.status_value)
         self.setTabOrder(self.status_value, self.settings_toggle_button)
         self.setTabOrder(self.settings_toggle_button, self.dictation_toggle_button)
@@ -471,6 +522,44 @@ class SettingsWindow(QMainWindow):
         announcement = QAccessibleAnnouncementEvent(self.status_value, message)
         announcement.setPoliteness(QAccessible.AnnouncementPoliteness.Polite)
         QAccessible.updateAccessibility(announcement)
+
+    def set_microphone_test_recording(self, recording: bool) -> None:
+        self.microphone_test_start_button.setEnabled(not recording)
+        self.microphone_test_stop_button.setEnabled(recording)
+        self.microphone_test_start_button.setText(
+            "Microphone Test Recording" if recording else "Start Microphone Test"
+        )
+        state = "Microphone test recording. Read the displayed sentence, then select Stop and Analyze." if recording else "Microphone test recording stopped. Analysis may still be in progress."
+        announcement = QAccessibleAnnouncementEvent(self.microphone_test_start_button, state)
+        announcement.setPoliteness(QAccessible.AnnouncementPoliteness.Polite)
+        QAccessible.updateAccessibility(announcement)
+
+    def set_microphone_test_result(self, result: dict) -> None:
+        quality = result["quality"]
+        accuracy = result.get("accuracy")
+        accuracy_text = "Not available" if accuracy is None else f"{accuracy:.0f}% word accuracy"
+        transcript = result.get("transcript") or "No speech recognized."
+        text = (
+            f"Audio quality: {quality['assessment']}\n"
+            f"Duration: {quality['duration']:.1f} seconds. Average level: {quality['rms_dbfs']:.1f} dBFS. "
+            f"Peak: {quality['peak_dbfs']:.1f} dBFS. Clipping: {quality['clipping_percent']:.2f}%.\n"
+            f"Model accuracy: {accuracy_text}.\n"
+            f"Expected: {result['expected']}\n"
+            f"Model heard: {transcript}"
+        )
+        self.microphone_test_result.setPlainText(text)
+        self.microphone_test_result.moveCursor(QTextCursor.MoveOperation.Start)
+        self.microphone_test_result.setAccessibleName(f"Microphone test result: {text}")
+        QAccessible.updateAccessibility(
+            QAccessibleEvent(self.microphone_test_result, QAccessible.Event.NameChanged)
+        )
+        announcement = QAccessibleAnnouncementEvent(
+            self.microphone_test_result,
+            f"Microphone test complete. {quality['assessment']} Model accuracy: {accuracy_text}."
+        )
+        announcement.setPoliteness(QAccessible.AnnouncementPoliteness.Assertive)
+        QAccessible.updateAccessibility(announcement)
+        self.microphone_test_result.setFocus()
 
     def focus_status(self) -> None:
         self.status_value.setFocus()

@@ -10,7 +10,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QObject, QTimer, Signal
 
-from .audio import AudioRecorder
+from .audio import AudioRecorder, assess_microphone_audio
 from .audio_ducking import SystemAudioDucker
 from .config import AppConfig
 from .insertion import TextInserter
@@ -44,6 +44,25 @@ SPOKEN_NUMBER_WORDS = (
 )
 
 
+def _word_accuracy(expected: str, actual: str) -> float | None:
+    """Score a known spoken prompt using word error rate, without external services."""
+    reference = re.findall(r"[a-z0-9]+", expected.lower())
+    heard = re.findall(r"[a-z0-9]+", actual.lower())
+    if not reference:
+        return None
+    previous = list(range(len(heard) + 1))
+    for i, expected_word in enumerate(reference, start=1):
+        current = [i]
+        for j, actual_word in enumerate(heard, start=1):
+            current.append(min(
+                previous[j] + 1,
+                current[j - 1] + 1,
+                previous[j - 1] + (expected_word != actual_word),
+            ))
+        previous = current
+    return max(0.0, 100.0 * (1.0 - previous[-1] / len(reference)))
+
+
 class DictationController(QObject):
     status_changed = Signal(str)
     transcript_ready = Signal(str)
@@ -51,6 +70,7 @@ class DictationController(QObject):
     recording_changed = Signal(bool)
     busy_changed = Signal(bool)
     model_preload_finished = Signal(str, bool, str)
+    microphone_test_finished = Signal(object)
 
     def __init__(self, config: AppConfig, model_cache_dir, word_bank: WordBank) -> None:  # noqa: ANN001
         super().__init__()
@@ -77,10 +97,12 @@ class DictationController(QObject):
         self._is_preloading = False
         self._last_transcript = ""
         self._enabled = True
+        self._microphone_test_active = False
         self._activation_hotkey_display = config.activation_hotkey.upper()
         self._recording_timer = QTimer(self)
         self._recording_timer.setSingleShot(True)
         self._recording_timer.timeout.connect(self._on_recording_timeout)
+        self._microphone_test_phrase = "The quick brown fox jumps over the lazy dog."
 
     @property
     def is_busy(self) -> bool:
@@ -114,6 +136,46 @@ class DictationController(QObject):
 
     def play_failure_feedback(self) -> None:
         self._play_feedback(FAILURE_SOUND)
+
+    @property
+    def is_microphone_test_recording(self) -> bool:
+        return self._recorder.is_recording and getattr(self, "_microphone_test_active", False)
+
+    def start_microphone_test(self) -> None:
+        """Record a diagnostic sample without inserting text or touching dictation stats."""
+        if self._recorder.is_recording:
+            self.status_changed.emit("A recording is already in progress. Stop it before starting the microphone test.")
+            return
+        if self.is_busy or self.is_preloading:
+            self.status_changed.emit("Please wait for the current model task to finish before testing the microphone.")
+            return
+        try:
+            self._microphone_test_active = True
+            self._recorder.start()
+            self.status_changed.emit(
+                f"Microphone test recording. Say: {self._microphone_test_phrase} Then select Stop and Analyze."
+            )
+        except Exception as exc:
+            self._microphone_test_active = False
+            LOGGER.exception("Microphone test start failed")
+            self.error_occurred.emit(f"Unable to start microphone test ({exc}).")
+
+    def stop_microphone_test(self) -> None:
+        if not self.is_microphone_test_recording:
+            self.status_changed.emit("Microphone test is not recording.")
+            return
+        audio = self._recorder.stop()
+        self._microphone_test_active = False
+        quality = assess_microphone_audio(audio)
+        if audio.size == 0:
+            self.microphone_test_finished.emit({"quality": quality, "expected": self._microphone_test_phrase,
+                                                 "transcript": "", "accuracy": None})
+            return
+        with self._busy_lock:
+            self._is_busy = True
+        self.busy_changed.emit(True)
+        self.status_changed.emit("Analyzing microphone level and testing model accuracy locally...")
+        threading.Thread(target=self._analyze_microphone_test, args=(audio, quality), daemon=True).start()
 
     def _play_feedback(self, sound_path: Path, *, wav: bool = False) -> None:
         if not self._config.sound_effects_enabled:
@@ -248,6 +310,25 @@ class DictationController(QObject):
         except Exception as exc:  # pragma: no cover
             LOGGER.exception("Transcription flow failed")
             self.error_occurred.emit(f"Transcription failed ({exc}).")
+        finally:
+            with self._busy_lock:
+                self._is_busy = False
+            self.busy_changed.emit(False)
+
+    def _analyze_microphone_test(self, audio, quality: dict[str, float | str]) -> None:  # noqa: ANN001
+        try:
+            transcript = self._engine.transcribe(audio)
+            accuracy = _word_accuracy(self._microphone_test_phrase, transcript)
+            self.microphone_test_finished.emit({
+                "quality": quality,
+                "expected": self._microphone_test_phrase,
+                "transcript": transcript,
+                "accuracy": accuracy,
+            })
+            self.status_changed.emit("Microphone test complete. Review the result in Microphone Check.")
+        except Exception as exc:  # pragma: no cover
+            LOGGER.exception("Microphone test analysis failed")
+            self.error_occurred.emit(f"Microphone test failed ({exc}).")
         finally:
             with self._busy_lock:
                 self._is_busy = False

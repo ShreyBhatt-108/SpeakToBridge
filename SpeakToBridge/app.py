@@ -206,6 +206,8 @@ class SpeakToBridgeRuntime(QObject):
         self._window.sound_effects_changed.connect(self._on_sound_effects_changed)
         self._window.word_bank_save_requested.connect(self._on_word_bank_save_requested)
         self._window.dictation_toggle_requested.connect(self._toggle_dictation)
+        self._window.microphone_test_start_requested.connect(self._on_microphone_test_start)
+        self._window.microphone_test_stop_requested.connect(self._on_microphone_test_stop)
         self._window.quit_requested.connect(self.shutdown)
         self._hotkey.hotkey_pressed.connect(self._on_hotkey_pressed)
         self._hotkey.read_hotkey_pressed.connect(self._on_read_hotkey_pressed)
@@ -216,6 +218,7 @@ class SpeakToBridgeRuntime(QObject):
         self._controller.transcript_ready.connect(self._on_transcript_ready)
         self._controller.recording_changed.connect(self._on_recording_changed)
         self._controller.model_preload_finished.connect(self._on_model_preload_finished)
+        self._controller.microphone_test_finished.connect(self._on_microphone_test_finished)
         self.model_cache_entries_ready.connect(self._apply_model_cache_entries)
 
     def _on_model_changed(self, model_name: str) -> None:
@@ -389,10 +392,32 @@ class SpeakToBridgeRuntime(QObject):
         if self._controller.is_busy:
             self._set_status("Please wait. Transcription in progress.")
             return
+        if self._controller.is_microphone_test_recording:
+            self._set_status("Microphone test is recording. Use Stop and Analyze in Microphone Check.")
+            return
         if self._controller.is_recording:
             self._controller.stop_recording_and_transcribe()
             return
         self._controller.start_recording()
+
+    def _on_microphone_test_start(self) -> None:
+        if self._controller.is_recording or self._controller.is_busy or self._controller.is_preloading:
+            self._set_status("Finish the current dictation or model task before starting a microphone test.")
+            return
+        self._controller.start_microphone_test()
+        if self._controller.is_microphone_test_recording:
+            self._window.set_microphone_test_recording(True)
+
+    def _on_microphone_test_stop(self) -> None:
+        if not self._controller.is_microphone_test_recording:
+            return
+        self._window.set_microphone_test_recording(False)
+        self._controller.stop_microphone_test()
+
+    def _on_microphone_test_finished(self, result: object) -> None:
+        if isinstance(result, dict):
+            self._window.set_microphone_test_result(result)
+        self._window.set_microphone_test_recording(False)
 
     def _on_read_hotkey_pressed(self) -> None:
         if not self._dictation_enabled:
