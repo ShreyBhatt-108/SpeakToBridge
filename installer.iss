@@ -16,7 +16,9 @@ OutputDir=dist
   #define OutputName "SpeakToBridge-Setup"
 #endif
 OutputBaseFilename={#OutputName}
-Compression=lzma
+Compression=lzma2
+LZMANumBlockThreads=2
+LZMAUseSeparateProcess=yes
 SolidCompression=yes
 WizardStyle=modern
 ArchitecturesInstallIn64BitMode=x64compatible
