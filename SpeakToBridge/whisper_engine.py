@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+import sys
 import threading
 from pathlib import Path
 
@@ -141,10 +142,15 @@ class WhisperEngine:
                 if device == "rocm":
                     loaded_model = AmdWhisperModel(model_name, self._model_cache_dir, self._amd_device_index)
                 else:
-                    loaded_model = WhisperModel(
-                        model_name, device=device, compute_type=compute_type,
-                        download_root=str(self._model_cache_dir),
-                    )
+                    torch = sys.modules.get("torch")
+                    if device == "cpu" and getattr(getattr(torch, "version", None), "hip", None):
+                        from .cpu_worker import CpuWhisperWorker
+                        loaded_model = CpuWhisperWorker(model_name, self._model_cache_dir)
+                    else:
+                        loaded_model = WhisperModel(
+                            model_name, device=device, compute_type=compute_type,
+                            download_root=str(self._model_cache_dir),
+                        )
             except Exception:
                 with self._model_cv:
                     if device != "cpu":

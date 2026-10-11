@@ -98,6 +98,10 @@ slightly and GPU speed depends on model size, memory, and drivers.
 
 ## Validation on this connected computer
 
+When ROCm PyTorch is loaded, CPU fallback runs faster-whisper in a separate
+worker process. This avoids conflicting OpenMP libraries while retaining the
+existing INT8 CPU engine. The worker exits when its model is released.
+
 This computer reports an Intel i7-11390H and Iris Xe, not an AMD 8060S.
 Automated tests cover ROCm selection, rejection of NVIDIA PyTorch as ROCm,
 CPU-only mode, loading and inference fallback, prompt forwarding, long audio,

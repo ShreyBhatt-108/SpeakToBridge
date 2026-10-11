@@ -47,13 +47,25 @@ class RuntimeTests(unittest.TestCase):
             self.assertIn("8060S", engine.runtime_description)
 
     def test_amd_load_failure_falls_back_to_cpu(self):
-        with patch("SpeakToBridge.whisper_engine.amd_device", return_value=(0, "8060S")), \
+        with patch.dict(sys.modules, {"torch": None}), \
+             patch("SpeakToBridge.whisper_engine.amd_device", return_value=(0, "8060S")), \
              patch("SpeakToBridge.whisper_engine.AmdWhisperModel", side_effect=RuntimeError("driver error")), \
              patch("SpeakToBridge.whisper_engine.WhisperModel") as cpu:
             engine = self.engine()
             engine.warm_model()
             self.assertEqual(engine.runtime_description, "CPU (INT8)")
             cpu.assert_called_once_with("tiny", device="cpu", compute_type="int8", download_root="unused-test-cache")
+
+    def test_rocm_loaded_cpu_fallback_uses_isolated_worker(self):
+        torch = SimpleNamespace(version=SimpleNamespace(hip="7.2"))
+        with patch.dict(sys.modules, {"torch": torch}), \
+             patch("SpeakToBridge.cpu_worker.CpuWhisperWorker") as worker, \
+             patch("SpeakToBridge.whisper_engine.WhisperModel") as cpu:
+            engine = self.engine("cpu")
+            engine.warm_model()
+            worker.assert_called_once_with("tiny", Path("unused-test-cache"))
+            cpu.assert_not_called()
+            self.assertEqual(engine.runtime_description, "CPU (INT8)")
 
     def test_gpu_inference_failure_retries_same_audio_on_cpu_once(self):
         engine = self.engine()
