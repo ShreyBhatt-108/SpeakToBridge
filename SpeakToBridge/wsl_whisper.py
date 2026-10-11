@@ -8,6 +8,7 @@ from pathlib import Path, PureWindowsPath
 import queue
 import subprocess
 import threading
+import time
 
 import numpy as np
 
@@ -53,7 +54,8 @@ def worker_command(cache_dir: Path, model_name: str | None) -> list[str]:
 
 class WslWhisperModel:
     _wsl_worker = True
-    def __init__(self, model_name: str, cache_dir: Path, device_index: int = 0) -> None:
+    def __init__(self, model_name: str, cache_dir: Path, device_index: int = 0, status_callback=None) -> None:
+        self._status_callback = status_callback
         self._lock = threading.Lock()
         self._replies = queue.Queue()
         self._process = subprocess.Popen(
@@ -67,9 +69,13 @@ class WslWhisperModel:
                 self._replies.put(line.replace("\x00", ""))
             self._replies.put(None)
         def read_stderr():
+            last_progress = 0
             for line in self._process.stderr:
                 self._stderr.append(line)
                 del self._stderr[:-30]
+                if self._status_callback and "model.safetensors:" in line and time.monotonic() - last_progress >= 5:
+                    last_progress = time.monotonic()
+                    self._status_callback("Downloading GPU weights: " + line.strip())
         threading.Thread(target=read_stdout, daemon=True).start()
         threading.Thread(target=read_stderr, daemon=True).start()
         try:
@@ -82,19 +88,25 @@ class WslWhisperModel:
             raise
 
     def _read_reply(self, timeout=300):
-        try:
-            line = self._replies.get(timeout=timeout)
-        except queue.Empty as exc:
-            raise RuntimeError("WSL transcription worker timed out") from exc
-        if line is None:
-            raise RuntimeError("WSL transcription worker stopped: " + "".join(self._stderr))
-        try:
-            value = json.loads(line)
-        except json.JSONDecodeError as exc:
-            raise RuntimeError("WSL worker could not start: " + line + "".join(self._stderr)) from exc
-        if "error" in value:
-            raise RuntimeError(value["error"])
-        return value
+        deadline = time.monotonic() + timeout
+        while True:
+            try:
+                line = self._replies.get(timeout=max(0, deadline - time.monotonic()))
+            except queue.Empty as exc:
+                raise RuntimeError("WSL transcription worker timed out") from exc
+            if line is None:
+                raise RuntimeError("WSL transcription worker stopped: " + "".join(self._stderr))
+            try:
+                value = json.loads(line)
+            except json.JSONDecodeError as exc:
+                raise RuntimeError("WSL worker could not start: " + line + "".join(self._stderr)) from exc
+            if "error" in value:
+                raise RuntimeError(value["error"])
+            if "status" in value:
+                if self._status_callback:
+                    self._status_callback(value["status"])
+                continue
+            return value
 
     @staticmethod
     def probe(cache_dir: Path) -> dict:

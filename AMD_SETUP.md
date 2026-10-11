@@ -23,7 +23,7 @@ The bundled runtime is ROCm 7.2.1 / PyTorch 2.9.1; the legacy AMD 7.2.1 Windows
 matrix lists the same gfx1151 architecture but does not explicitly name the 388.
 The newer AMD ROCm documentation explicitly lists the 388. The original native Windows bundle has not passed GPU verification on this
 388 under Smart App Control. The shared WSL backend described below has passed
-real Tiny and Small GPU transcription on this hardware.
+real Tiny, Small and Large v3 GPU transcription on this hardware.
 
 AMD's [Adrenalin 26.2.2 release page](https://www.amd.com/en/resources/support-articles/release-notes/RN-RAD-WIN-26-2-2.html)
 contains the official driver download for the documented ROCm 7.2.1 combination.
@@ -248,10 +248,10 @@ Transformers to reuse these weights. CTranslate2 CPU weights use a different
 format and remain separate; settings, Word Bank and existing caches are preserved.
 
 Target hardware checks after restart: Radeon 8060S detection, FP16 matrix
-execution and packaged Tiny/Small speech transcription passed. The runtime reported
+execution and packaged Tiny/Small/Large v3 speech transcription passed. The runtime reported
 18,141,939,712 bytes (16.90 GiB) of GPU memory with the firmware's 2 GB allocation.
 Explicit CPU transcription and unavailable-WSL-worker CPU fallback passed.
-31 regression tests passed, including persistent backend reporting. See the local troubleshooting report for the latest
+32 regression tests passed, including persistent backend reporting. See the local troubleshooting report for the latest
 Small-model and GUI results. No GPU-enabled release has been published.
 
 AMD installation references:

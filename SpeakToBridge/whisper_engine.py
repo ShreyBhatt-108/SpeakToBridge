@@ -154,7 +154,7 @@ class WhisperEngine:
             source = (f"Hugging Face Hub (openai/whisper-{model_name})" if device in ("rocm", "wsl_rocm")
                       else self._model_source(model_name))
             if device in ("rocm", "wsl_rocm"):
-                self._emit_status(f"Preparing AMD GPU model '{model_name}' from {source}; downloading missing files.")
+                self._emit_status(f"Preparing AMD GPU model '{model_name}'; checking cached files.")
             elif self._is_model_cached_locally(model_name):
                 self._emit_status(f"Loading model '{model_name}' from local cache.")
             else:
@@ -168,7 +168,7 @@ class WhisperEngine:
             try:
                 if device in ("rocm", "wsl_rocm"):
                     if device == "wsl_rocm":
-                        loaded_model = WslWhisperModel(model_name, self._model_cache_dir)
+                        loaded_model = WslWhisperModel(model_name, self._model_cache_dir, status_callback=self._emit_status)
                         self._amd_device_name = loaded_model.device_name
                     else:
                         loaded_model = AmdWhisperModel(model_name, self._model_cache_dir, self._amd_device_index)

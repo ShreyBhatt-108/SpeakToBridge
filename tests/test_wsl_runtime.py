@@ -68,6 +68,7 @@ class WslRuntimeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             script = Path(temp)/"fake_worker.py"
             script.write_text('''import sys, json, base64
+print(json.dumps({"status": "Loading cached GPU model"}), flush=True)
 print(json.dumps({"ready": True, "gpu_matrix_test": True, "amd_gpu": "test GPU"}), flush=True)
 for line in sys.stdin:
     request = json.loads(line)
@@ -77,7 +78,9 @@ for line in sys.stdin:
     print(json.dumps({"text": "verified pipe"}), flush=True)
 ''', encoding="utf-8")
             with patch("SpeakToBridge.wsl_whisper.worker_command", return_value=[sys.executable, "-u", str(script)]):
-                worker = WslWhisperModel("tiny", Path(temp))
+                statuses = []
+                worker = WslWhisperModel("tiny", Path(temp), status_callback=statuses.append)
+                self.assertEqual(statuses, ["Loading cached GPU model"])
                 self.assertEqual(worker.transcribe(np.ones(4, dtype=np.float32), "en", "Word Bank example", {"vad_filter": False}), "verified pipe")
                 worker.close()
                 self.assertEqual(worker._process.returncode, 0)

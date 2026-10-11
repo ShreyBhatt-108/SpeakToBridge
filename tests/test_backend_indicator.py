@@ -79,3 +79,27 @@ class OfflineWslCacheTests(unittest.TestCase):
                 (model / name).write_text("ready")
             with patch("huggingface_hub.snapshot_download", side_effect=AssertionError("Network used")):
                 self.assertEqual(prepare_model_cache(cache, "small"), model)
+
+
+    def test_download_excludes_redundant_fp32_weights(self):
+        import fnmatch
+        import tempfile
+        from scripts.wsl_worker import prepare_model_cache
+        with tempfile.TemporaryDirectory() as directory:
+            cache = Path(directory)
+            def download(repository, local_dir, allow_patterns, ignore_patterns):
+                names = ["model.safetensors", "model.fp32-00001-of-00002.safetensors",
+                         "model.fp32-00002-of-00002.safetensors", "model.safetensors.index.fp32.json",
+                         "config.json", "generation_config.json", "preprocessor_config.json",
+                         "tokenizer_config.json", "tokenizer.json"]
+                selected = [name for name in names if any(fnmatch.fnmatch(name,p) for p in allow_patterns)
+                            and not any(fnmatch.fnmatch(name,p) for p in ignore_patterns)]
+                self.assertEqual([name for name in selected if name.endswith(".safetensors")], ["model.safetensors"])
+                self.assertNotIn("model.safetensors.index.fp32.json", selected)
+                model = Path(local_dir)
+                model.mkdir()
+                for name in selected:
+                    (model/name).write_text("test fixture")
+            with patch("huggingface_hub.snapshot_download", side_effect=download):
+                model = prepare_model_cache(cache,"large-v3")
+                self.assertTrue((model/".speak_to_bridge_ready").is_file())

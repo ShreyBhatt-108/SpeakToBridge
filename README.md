@@ -24,7 +24,7 @@ preferences, and status feedback that works with JAWS.
 AMD Strix Halo / Radeon 8060S GPU processing is available through the optional
 ROCm backend. See [AMD setup and verification](AMD_SETUP.md). CPU processing
 continues to work without the optional runtime. The shared WSL ROCm backend has
-been verified on a Ryzen AI Max+ 388 / Radeon 8060S with Tiny and Small models.
+been verified on a Ryzen AI Max+ 388 / Radeon 8060S with Tiny, Small and Large v3 models.
 These repairs are available in source; the v1.5.0-rc.1 installer predates them.
 
 - **Local transcription:** recorded audio stays on the computer after the
@@ -123,6 +123,13 @@ packages and Transformers 4.57.6. This differs from the original Windows bundle'
 ROCm 7.2.1/PyTorch 2.9.1. Native Windows DLLs and Linux shared libraries are different
 binaries: using the Linux runtime avoids loading the unsigned Windows ROCm DLL
 that Smart App Control rejected on the tested laptop. Smart App Control stays on.
+
+The first GPU preparation downloads the selected model's required weights.
+Large v3's standard 16-bit weight file is about 3.09 GB: approximately 1.55
+billion parameters at two bytes each. Quantized versions can be smaller, but
+this PyTorch/ROCm backend currently uses FP16. The downloader selects the needed
+`model.safetensors` file and excludes redundant FP32 copies. Runtime Status
+distinguishes downloading from loading cached weights into GPU memory.
 
 Windows files are accessible under `/mnt/c`. GPU Whisper weights are regular
 files in the existing app cache's `models/openai-whisper-<size>` directories, so a
