@@ -21,6 +21,10 @@ preferences, and status feedback that works with JAWS.
 
 ## Highlights
 
+AMD Strix Halo / Radeon 8060S GPU processing is available through the optional
+ROCm backend. See [AMD setup and verification](AMD_SETUP.md). CPU processing
+continues to work without the optional runtime.
+
 - **Local transcription:** recorded audio stays on the computer after the
   selected Whisper model has been downloaded.
 - **Keyboard-first operation:** a configurable global hotkey starts and stops

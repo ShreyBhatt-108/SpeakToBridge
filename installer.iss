@@ -12,7 +12,10 @@ DefaultGroupName=Speak to Bridge
 UsePreviousGroup=no
 DisableProgramGroupPage=yes
 OutputDir=dist
-OutputBaseFilename=SpeakToBridge-Setup
+#ifndef OutputName
+  #define OutputName "SpeakToBridge-Setup"
+#endif
+OutputBaseFilename={#OutputName}
 Compression=lzma
 SolidCompression=yes
 WizardStyle=modern

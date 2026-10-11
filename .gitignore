@@ -1,4 +1,6 @@
 .venv/
+.venv-amd/
+.build-tools/
 __pycache__/
 *.py[cod]
 *$py.class

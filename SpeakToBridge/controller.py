@@ -124,6 +124,13 @@ class DictationController(QObject):
     def set_model(self, model_name: str) -> None:
         self._engine.update_model(model_name)
 
+    def set_runtime(self, runtime_mode: str) -> None:
+        self._engine.update_runtime(runtime_mode)
+
+    @property
+    def runtime_description(self) -> str:
+        return self._engine.runtime_description
+
     def set_activation_hotkey_display(self, display: str) -> None:
         self._activation_hotkey_display = display
 
@@ -298,7 +305,7 @@ class DictationController(QObject):
                 self.status_changed.emit("Dictation disabled. Transcript was not inserted.")
                 return
             self._last_transcript = text
-            self.status_changed.emit("Model ready. Transcript captured.")
+            self.status_changed.emit(f"Model ready. Transcript captured using {self.runtime_description}.")
             self.transcript_ready.emit(text)
             self.status_changed.emit("Inserting transcript...")
             inserted, msg = self._inserter.insert(text)
@@ -342,7 +349,7 @@ class DictationController(QObject):
                 self.set_model(model_name)
             self.status_changed.emit("Preparing selected model...")
             self._engine.warm_model()
-            self.status_changed.emit("Model ready.")
+            self.status_changed.emit(f"Model ready. Using {self.runtime_description}.")
             self._play_feedback(SUCCESS_SOUND)
             self.model_preload_finished.emit(requested_model, True, "")
         except Exception as exc:  # pragma: no cover

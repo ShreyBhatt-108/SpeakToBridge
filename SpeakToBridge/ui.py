@@ -37,6 +37,7 @@ from .constants import (
     MAX_MAX_RECORDING_SECONDS,
     MIN_MAX_RECORDING_SECONDS,
     MODEL_CHOICES,
+    RUNTIME_CHOICES,
 )
 
 
@@ -48,6 +49,7 @@ class SettingsWindow(QMainWindow):
     read_hotkey_apply_requested = Signal(str)
     recording_limit_apply_requested = Signal(int)
     sound_effects_changed = Signal(bool)
+    runtime_apply_requested = Signal(str)
     word_bank_save_requested = Signal(object)
     dictation_toggle_requested = Signal()
     microphone_test_start_requested = Signal()
@@ -61,6 +63,7 @@ class SettingsWindow(QMainWindow):
         initial_read_hotkey: str,
         initial_max_recording_seconds: int,
         initial_sound_effects_enabled: bool,
+        initial_runtime_mode: str = "cpu_auto_gpu",
     ) -> None:
         super().__init__()
         self.setWindowTitle(f"{APP_NAME} Settings")
@@ -215,6 +218,20 @@ class SettingsWindow(QMainWindow):
         self.active_model_value.setFocusPolicy(Qt.NoFocus)
         self.active_model_value.setAccessibleName("Active model")
         model_form.addRow("Active model:", self.active_model_value)
+        self.runtime_combo = QComboBox()
+        self.runtime_combo.setAccessibleName("Processing device")
+        for label, value in RUNTIME_CHOICES.items():
+            self.runtime_combo.addItem(label, value)
+        self.runtime_combo.setCurrentIndex(max(0, self.runtime_combo.findData(initial_runtime_mode)))
+        model_form.addRow("Processing device:", self.runtime_combo)
+        self.runtime_apply_button = QPushButton("Apply Processing Device")
+        self.runtime_apply_button.clicked.connect(
+            lambda: self.runtime_apply_requested.emit(str(self.runtime_combo.currentData()))
+        )
+        model_form.addRow("", self.runtime_apply_button)
+        runtime_help = QLabel("AMD GPU mode requires the optional ROCm runtime. CPU works without it.")
+        runtime_help.setWordWrap(True)
+        model_form.addRow("", runtime_help)
         model_help = QLabel("Model changes apply immediately. Restart is not required.")
         model_help.setWordWrap(True)
         model_form.addRow("", model_help)
@@ -476,7 +493,9 @@ class SettingsWindow(QMainWindow):
 
         self.setTabOrder(self.model_combo, self.apply_model_button)
         self.setTabOrder(self.apply_model_button, self.model_status_value)
-        self.setTabOrder(self.model_status_value, self.hotkey_modifier_combo)
+        self.setTabOrder(self.model_status_value, self.runtime_combo)
+        self.setTabOrder(self.runtime_combo, self.runtime_apply_button)
+        self.setTabOrder(self.runtime_apply_button, self.hotkey_modifier_combo)
         self.setTabOrder(self.hotkey_modifier_combo, self.hotkey_key_combo)
         self.setTabOrder(self.hotkey_key_combo, self.hotkey_apply_button)
         self.setTabOrder(self.hotkey_apply_button, self.read_hotkey_modifier_combo)

@@ -1,4 +1,6 @@
+param([switch]$AmdRuntime)
 $ErrorActionPreference = "Stop"
+Set-Location -LiteralPath $PSScriptRoot
 
 $pythonCmd = if ($env:SPEAK_TO_BRIDGE_BUILD_PYTHON) { $env:SPEAK_TO_BRIDGE_BUILD_PYTHON } else { "python" }
 Write-Host "Build Python command: $pythonCmd"
@@ -23,13 +25,37 @@ if ($machine -notin @("AMD64", "x86_64", "ARM64", "aarch64")) {
     throw "Unsupported 64-bit Python architecture '$machine'. Build with x64 or ARM64 Python."
 }
 
-Remove-Item -Recurse -Force ".\build" -ErrorAction SilentlyContinue
-Remove-Item -Recurse -Force ".\dist\SpeakToBridge" -ErrorAction SilentlyContinue
-Remove-Item -Force ".\dist\SpeakToBridge-Setup.exe" -ErrorAction SilentlyContinue
+$installerName = if ($AmdRuntime) { "SpeakToBridge-AMD-Setup" } else { "SpeakToBridge-Setup" }
+foreach ($relative in @("build", "dist\SpeakToBridge")) {
+    $target = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot $relative))
+    if (-not $target.StartsWith($PSScriptRoot + [System.IO.Path]::DirectorySeparatorChar, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "Build cleanup path is outside the project: $target"
+    }
+    if (Test-Path -LiteralPath $target) { Remove-Item -LiteralPath $target -Recurse -Force }
+}
+Remove-Item -LiteralPath ".\dist\$installerName.exe" -Force -ErrorAction SilentlyContinue
 
 & $pythonCmd -m pip install --require-hashes -r ".\requirements.lock.txt"
+if ($LASTEXITCODE -ne 0) { throw "Runtime dependency installation failed." }
 & $pythonCmd -m pip install --require-hashes -r ".\build-requirements.lock.txt"
-& $pythonCmd -m PyInstaller --noconfirm --windowed --onedir --noupx --name SpeakToBridge `
+if ($LASTEXITCODE -ne 0) { throw "Build dependency installation failed." }
+$backendArgs = @("--exclude-module", "torch", "--exclude-module", "transformers")
+if ($AmdRuntime) {
+    # Reconcile Transformers' Hub dependency after installing the CPU lockfile.
+    & $pythonCmd -m pip install -r ".\requirements-amd.txt"
+    if ($LASTEXITCODE -ne 0) { throw "AMD model dependency installation failed." }
+    & $pythonCmd -c "import torch; from transformers import WhisperProcessor, WhisperForConditionalGeneration; assert torch.version.hip, 'Install official ROCm PyTorch before building an AMD installer'; print('Bundling ROCm', torch.version.hip)"
+    if ($LASTEXITCODE -ne 0) { throw "AMD runtime verification failed." }
+    $backendArgs = @("--collect-all", "torch", "--collect-all", "transformers")
+    $sdkPackages = & $pythonCmd -c "import importlib.metadata as m; print('\n'.join(sorted({p.split('/')[0] for d in m.distributions() if d.metadata['Name'].lower().replace('_','-').startswith('rocm') for p in map(str, d.files or []) if p.split('/')[0].startswith('_rocm')})))"
+    if ($LASTEXITCODE -ne 0) { throw "Could not discover ROCm SDK packages." }
+    foreach ($sdkPackage in $sdkPackages) {
+        if ($sdkPackage.Trim()) { $backendArgs += @("--collect-all", $sdkPackage.Trim()) }
+    }
+}
+& $pythonCmd -m pip check
+if ($LASTEXITCODE -ne 0) { throw "Dependency verification failed." }
+& $pythonCmd -m PyInstaller --noconfirm --windowed --onedir --noupx --name SpeakToBridge --specpath ".\build" @backendArgs `
     --collect-data faster_whisper `
     --add-data "SpeakToBridge\dictation_begin.wav;SpeakToBridge" `
     --add-data "SpeakToBridge\reverse_dictation_end.mp3;SpeakToBridge" `
@@ -37,6 +63,7 @@ Remove-Item -Force ".\dist\SpeakToBridge-Setup.exe" -ErrorAction SilentlyContinu
     --add-data "SpeakToBridge\status_success.mp3;SpeakToBridge" `
     --add-data "SpeakToBridge\status_failure.mp3;SpeakToBridge" `
     .\launcher.py
+if ($LASTEXITCODE -ne 0) { throw "PyInstaller build failed." }
 
 if (-not (Test-Path ".\dist\SpeakToBridge\SpeakToBridge.exe")) {
     throw "Build failed: .\dist\SpeakToBridge\SpeakToBridge.exe was not created."
@@ -57,7 +84,10 @@ if (-not (Test-Path $expectedPortAudio)) {
 
     $wheelPlatform = if ($machine -in @("ARM64", "aarch64")) { "win_arm64" } else { "win_amd64" }
     $wheelDir = Join-Path $env:TEMP "SpeakToBridge-sounddevice-wheel"
-    Remove-Item -Recurse -Force $wheelDir -ErrorAction SilentlyContinue
+    $wheelDir = [System.IO.Path]::GetFullPath($wheelDir)
+    $tempRoot = [System.IO.Path]::GetFullPath($env:TEMP).TrimEnd('\') + '\'
+    if (-not $wheelDir.StartsWith($tempRoot, [System.StringComparison]::OrdinalIgnoreCase)) { throw "Unsafe wheel cleanup path." }
+    Remove-Item -LiteralPath $wheelDir -Recurse -Force -ErrorAction SilentlyContinue
     New-Item -ItemType Directory -Path $wheelDir | Out-Null
 
     & $pythonCmd -m pip download `
@@ -131,19 +161,20 @@ if (-not $iscc) {
     exit 0
 }
 
-& $iscc "/DAppVersion=$appVersion" ".\installer.iss"
+& $iscc "/DAppVersion=$appVersion" "/DOutputName=$installerName" ".\installer.iss"
+if ($LASTEXITCODE -ne 0) { throw "Inno Setup compilation failed." }
 
-if (-not (Test-Path ".\dist\SpeakToBridge-Setup.exe")) {
-    throw "Installer build failed: .\dist\SpeakToBridge-Setup.exe was not created."
+if (-not (Test-Path ".\dist\$installerName.exe")) {
+    throw "Installer build failed: .\dist\$installerName.exe was not created."
 }
 
 if ($signingThumbprint) {
     & $signTool.FullName sign /sha1 $signingThumbprint /fd SHA256 /tr "http://timestamp.digicert.com" /td SHA256 `
-        ".\dist\SpeakToBridge-Setup.exe"
+        ".\dist\$installerName.exe"
     if ($LASTEXITCODE -ne 0) {
         throw "Code signing failed for SpeakToBridge-Setup.exe."
     }
 }
 
 Write-Host "EXE build completed: .\dist\SpeakToBridge\SpeakToBridge.exe"
-Write-Host "Installer completed: .\dist\SpeakToBridge-Setup.exe"
+Write-Host "Installer completed: .\dist\$installerName.exe"

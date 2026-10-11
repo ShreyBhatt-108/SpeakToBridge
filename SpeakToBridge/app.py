@@ -112,6 +112,7 @@ class SpeakToBridgeRuntime(QObject):
             initial_read_hotkey=self._hotkey.read_hotkey_display,
             initial_max_recording_seconds=self._config.max_recording_seconds,
             initial_sound_effects_enabled=self._config.sound_effects_enabled,
+            initial_runtime_mode=self._config.runtime_mode,
         )
         self._controller = DictationController(
             config=self._config,
@@ -204,6 +205,7 @@ class SpeakToBridgeRuntime(QObject):
         self._window.read_hotkey_apply_requested.connect(self._on_read_hotkey_changed)
         self._window.recording_limit_apply_requested.connect(self._on_recording_limit_changed)
         self._window.sound_effects_changed.connect(self._on_sound_effects_changed)
+        self._window.runtime_apply_requested.connect(self._on_runtime_changed)
         self._window.word_bank_save_requested.connect(self._on_word_bank_save_requested)
         self._window.dictation_toggle_requested.connect(self._toggle_dictation)
         self._window.microphone_test_start_requested.connect(self._on_microphone_test_start)
@@ -239,6 +241,23 @@ class SpeakToBridgeRuntime(QObject):
         self._set_status(f"Model selected: {model_name}. Preparing model now...")
         self._window.focus_model_status()
         self._notify_user(f"Model selected: {model_name}. Preparing model...", QSystemTrayIcon.MessageIcon.Information, 1600)
+
+    def _on_runtime_changed(self, runtime_mode: str) -> None:
+        from .config import ALLOWED_RUNTIME_MODES
+
+        if runtime_mode not in ALLOWED_RUNTIME_MODES:
+            return
+        if self._controller.is_recording or self._controller.is_busy or self._controller.is_preloading:
+            self._set_status("Finish the current recording or processing task before changing device.")
+            self._window.runtime_combo.setCurrentIndex(
+                self._window.runtime_combo.findData(self._config.runtime_mode)
+            )
+            return
+        self._controller.set_runtime(runtime_mode)
+        self._config.runtime_mode = runtime_mode
+        self._config_store.save(self._config)
+        self._set_status("Processing device saved. The selected backend will load on the next dictation.")
+        self._refresh_model_cache_list()
 
     def _on_model_preload_finished(self, model_name: str, success: bool, message: str) -> None:
         if self._pending_model_name != model_name:
@@ -359,7 +378,8 @@ class SpeakToBridgeRuntime(QObject):
             self._window.focus_model_status()
             return
         active_folder = f"models--Systran--faster-whisper-{self._config.model_name}"
-        if folder_name == active_folder:
+        amd_folder = f"models--openai--whisper-{self._config.model_name}"
+        if folder_name in {active_folder, amd_folder}:
             self._set_status("Cannot delete the currently selected model.")
             self._window.focus_model_status()
             return
@@ -455,6 +475,9 @@ class SpeakToBridgeRuntime(QObject):
         self._notify_user(message, QSystemTrayIcon.MessageIcon.Critical, 2500, always=True)
 
     def _set_status(self, message: str) -> None:
+        backend = self._controller.runtime_description
+        if backend != "Not loaded yet" and backend not in message:
+            message = f"{message} Processing: {backend}."
         if message == self._last_status_message:
             return
         self._last_status_message = message
@@ -581,26 +604,32 @@ class SpeakToBridgeRuntime(QObject):
         worker.start()
 
     def _load_model_cache_entries(self, generation: int) -> None:
+        from .amd_whisper import amd_device
+        from .model_storage import AMD_MODEL_CACHE_PREFIX, MODEL_CACHE_PREFIX
+
         rows: list[tuple[str, str, str, bool]] = []
         error = ""
+        use_amd = self._config.runtime_mode != "cpu" and amd_device() is not None
+        prefix = AMD_MODEL_CACHE_PREFIX if use_amd else MODEL_CACHE_PREFIX
         try:
             models = list_cached_models(self._model_cache_dir)
             for item in models:
                 status = "ready" if item.ready else "incomplete"
-                label = f"{item.model_name} ({format_size(item.size_bytes)}, {status})"
+                label = f"{item.model_name} ({item.backend}, {format_size(item.size_bytes)}, {status})"
                 rows.append((label, item.folder_name, item.model_name, item.ready))
         except Exception as exc:
             LOGGER.exception("Cached model refresh failed")
             error = str(exc)
-        self.model_cache_entries_ready.emit((generation, rows, error))
+        self.model_cache_entries_ready.emit((generation, rows, error, prefix))
 
     def _apply_model_cache_entries(self, payload: object) -> None:
-        generation, rows, error = payload
+        generation, rows, error, prefix = payload
         if generation != self._model_cache_refresh_generation:
             return
         ready_map: dict[str, bool] = {}
-        for _, _, model_name, ready in rows:
-            ready_map[model_name] = ready
+        for _, folder_name, model_name, ready in rows:
+            if folder_name.startswith(prefix):
+                ready_map[model_name] = ready
         self._model_ready_map = ready_map
         self._window.set_model_cache_entries(rows)
         self._window.set_model_choices_availability(self._model_ready_map, self._config.model_name)

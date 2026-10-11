@@ -9,6 +9,7 @@ import numpy as np
 from faster_whisper import WhisperModel
 
 from .model_storage import is_model_cache_ready
+from .amd_whisper import AmdWhisperModel, amd_device
 
 
 LOGGER = logging.getLogger(__name__)
@@ -42,7 +43,10 @@ class WhisperEngine:
         self._vad_mode = vad_mode
         self._model_cache_dir = model_cache_dir
         self._status_callback = status_callback
-        self._model: WhisperModel | None = None
+        self._model: WhisperModel | AmdWhisperModel | None = None
+        self._gpu_failed = False
+        self._amd_device_index = 0
+        self._runtime_description = "Not loaded yet"
         self._device = "cpu"
         self._compute_type = "int8"
         self._model_lock = threading.Lock()
@@ -56,12 +60,34 @@ class WhisperEngine:
         with self._model_cv:
             self._model_name = model_name
             self._model = None
+            self._runtime_description = "Not loaded yet"
             self._model_cv.notify_all()
 
     def _resolve_runtime(self) -> tuple[str, str]:
+        if self._runtime_mode == "cpu" or self._gpu_failed:
+            return "cpu", "int8"
+        candidate = amd_device()
+        if candidate is not None:
+            self._amd_device_index, self._amd_device_name = candidate
+            return "rocm", "float16"
+        if self._runtime_mode == "amd_gpu":
+            self._emit_status("AMD GPU runtime unavailable. Using CPU; run scripts/setup_amd.ps1 on the AMD computer.")
+            return "cpu", "int8"
         if self._runtime_mode == "cpu_auto_gpu" and _has_cuda_device():
             return "cuda", "float16"
         return "cpu", "int8"
+
+    @property
+    def runtime_description(self) -> str:
+        return self._runtime_description
+
+    def update_runtime(self, runtime_mode: str) -> None:
+        with self._model_cv:
+            self._runtime_mode = runtime_mode
+            self._gpu_failed = False
+            self._model = None
+            self._runtime_description = "Not loaded yet"
+            self._model_cv.notify_all()
 
     def _emit_status(self, message: str) -> None:
         if self._status_callback is not None:
@@ -94,10 +120,14 @@ class WhisperEngine:
                     continue
                 self._loading_in_progress = True
                 model_name = self._model_name
+                runtime_mode = self._runtime_mode
                 device, compute_type = self._resolve_runtime()
 
-            source = self._model_source(model_name)
-            if self._is_model_cached_locally(model_name):
+            source = (f"Hugging Face Hub (openai/whisper-{model_name})" if device == "rocm"
+                      else self._model_source(model_name))
+            if device == "rocm":
+                self._emit_status(f"Preparing AMD GPU model '{model_name}' from {source}; downloading missing files.")
+            elif self._is_model_cached_locally(model_name):
                 self._emit_status(f"Loading model '{model_name}' from local cache.")
             else:
                 self._emit_status(f"Downloading model '{model_name}' from {source}.")
@@ -108,28 +138,41 @@ class WhisperEngine:
                 compute_type,
             )
             try:
-                loaded_model = WhisperModel(
-                    model_name,
-                    device=device,
-                    compute_type=compute_type,
-                    download_root=str(self._model_cache_dir),
-                )
+                if device == "rocm":
+                    loaded_model = AmdWhisperModel(model_name, self._model_cache_dir, self._amd_device_index)
+                else:
+                    loaded_model = WhisperModel(
+                        model_name, device=device, compute_type=compute_type,
+                        download_root=str(self._model_cache_dir),
+                    )
             except Exception:
                 with self._model_cv:
+                    if device != "cpu":
+                        self._gpu_failed = True
                     self._loading_in_progress = False
                     self._model_cv.notify_all()
+                if device != "cpu":
+                    LOGGER.exception("GPU model initialization failed; falling back to CPU")
+                    self._emit_status("GPU initialization failed. Falling back to CPU.")
+                    continue
                 raise
 
             with self._model_cv:
                 self._loading_in_progress = False
                 self._model_cv.notify_all()
                 # If the requested model changed while loading, discard and load current target.
-                if self._model_name != model_name:
+                if self._model_name != model_name or self._runtime_mode != runtime_mode:
                     continue
                 self._device = device
                 self._compute_type = compute_type
                 self._model = loaded_model
-                self._known_cached_models.add(model_name)
+                if device != "rocm":
+                    self._known_cached_models.add(model_name)
+                self._runtime_description = (
+                    f"AMD ROCm GPU: {self._amd_device_name} (FP16)" if device == "rocm"
+                    else "NVIDIA CUDA GPU (FP16)" if device == "cuda" else "CPU (INT8)"
+                )
+                self._emit_status(f"Model ready. Using {self._runtime_description}.")
                 return
 
     def warm_model(self) -> None:
@@ -160,10 +203,27 @@ class WhisperEngine:
         }
 
     def transcribe(self, audio: np.ndarray, initial_prompt: str = "") -> str:
+        try:
+            return self._transcribe(audio, initial_prompt)
+        except Exception:
+            if self._device == "cpu" or self._model is None:
+                raise
+            LOGGER.exception("GPU transcription failed; retrying recording on CPU")
+            with self._model_cv:
+                self._model = None
+                self._gpu_failed = True
+                self._runtime_description = "Not loaded yet"
+            self._emit_status("GPU transcription failed. Retrying on CPU.")
+            return self._transcribe(audio, initial_prompt)
+
+    def _transcribe(self, audio: np.ndarray, initial_prompt: str = "") -> str:
         if audio.size == 0:
             return ""
         self._ensure_model()
         assert self._model is not None
+        self._emit_status(f"Transcribing with {self._runtime_description}.")
+        if isinstance(self._model, AmdWhisperModel):
+            return self._model.transcribe(audio, self._language, initial_prompt, self._vad_options())
         options = {
             "language": self._language,
             "beam_size": 4,

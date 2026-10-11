@@ -44,6 +44,28 @@ This project keeps source code in Git and publishes Windows binaries in GitHub R
 
 ## Notes
 
+### AMD runtime release
+
+Install the official ROCm 7.2.1 Windows SDK packages and PyTorch 2.9.1 wheel
+listed in `scripts/setup_amd.ps1` into an x64 Python 3.12 build environment.
+GPU availability is not required on the build host. Set
+`SPEAK_TO_BRIDGE_BUILD_PYTHON` to that interpreter and run `build.ps1 -AmdRuntime`.
+The script installs the ordinary hash lockfiles, reconciles the explicitly pinned
+AMD model dependencies from `requirements-amd.txt`, verifies ROCm imports, and
+bundles torch, Transformers and all ROCm SDK packages. This AMD dependency layer
+is version-pinned but does not yet have a complete hash lockfile.
+
+The output is `dist\SpeakToBridge-AMD-Setup.exe`. Build the ordinary CPU installer
+first if shipping both; its installer remains in `dist` while the portable folder
+is replaced by the AMD build. Generated PyInstaller specs are stored under `build`.
+Do not include private walkthroughs or local build-tool environments in a release.
+
+Before uploading, execute the packaged `SpeakToBridge.exe --check-hardware`
+diagnostic and a CPU transcription test using `--cpu --wav`. For the AMD build,
+verify `rocm_version` and `whisper_imports` even on a non-AMD build host. AMD GPU
+matrix multiplication and actual speech inference must be checked on the target
+hardware. Publish as a prerelease while that hardware validation is pending.
+
 - End users should download `SpeakToBridge-Setup.exe` from Releases.
 - The `dist\SpeakToBridge` directory is the portable build and does not provide a full install/uninstall experience.
 - Do not commit or upload `CODE_WALKTHROUGH_LOCAL.md`; it is intentionally ignored and private to the local developer workspace.

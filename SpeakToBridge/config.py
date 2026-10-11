@@ -20,7 +20,7 @@ from .constants import (
 
 ALLOWED_MODELS = frozenset(MODEL_CHOICES.values())
 ALLOWED_LANGUAGES = frozenset({"en"})
-ALLOWED_RUNTIME_MODES = frozenset({"cpu", "cpu_auto_gpu"})
+ALLOWED_RUNTIME_MODES = frozenset({"cpu", "cpu_auto_gpu", "amd_gpu"})
 ALLOWED_VAD_MODES = frozenset({"off", "fast", "pause_preserving", "accuracy"})
 
 

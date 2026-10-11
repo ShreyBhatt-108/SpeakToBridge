@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import shutil
+import json
 from dataclasses import dataclass
 from pathlib import Path
 
 MODEL_CACHE_PREFIX = "models--Systran--faster-whisper-"
+AMD_MODEL_CACHE_PREFIX = "models--openai--whisper-"
 REQUIRED_MODEL_FILES = frozenset({"config.json", "model.bin", "tokenizer.json", "vocabulary.txt"})
 
 
@@ -14,6 +16,7 @@ class CachedModelInfo:
     folder_name: str
     size_bytes: int
     ready: bool
+    backend: str = "CPU/NVIDIA"
 
 
 def list_cached_models(model_cache_dir: Path) -> list[CachedModelInfo]:
@@ -30,9 +33,10 @@ def list_cached_models(model_cache_dir: Path) -> list[CachedModelInfo]:
                 continue
         except OSError:
             continue
-        if not entry.name.startswith(MODEL_CACHE_PREFIX):
+        prefix = next((p for p in (MODEL_CACHE_PREFIX, AMD_MODEL_CACHE_PREFIX) if entry.name.startswith(p)), None)
+        if prefix is None:
             continue
-        model_name = entry.name[len(MODEL_CACHE_PREFIX) :]
+        model_name = entry.name[len(prefix) :]
         size_bytes = _folder_size(entry)
         ready = is_model_cache_ready(entry)
         results.append(
@@ -41,13 +45,14 @@ def list_cached_models(model_cache_dir: Path) -> list[CachedModelInfo]:
                 folder_name=entry.name,
                 size_bytes=size_bytes,
                 ready=ready,
+                backend="AMD ROCm" if prefix == AMD_MODEL_CACHE_PREFIX else "CPU/NVIDIA",
             )
         )
     return sorted(results, key=lambda item: item.model_name)
 
 
 def delete_cached_model(model_cache_dir: Path, folder_name: str) -> bool:
-    if Path(folder_name).name != folder_name or not folder_name.startswith(MODEL_CACHE_PREFIX):
+    if Path(folder_name).name != folder_name or not folder_name.startswith((MODEL_CACHE_PREFIX, AMD_MODEL_CACHE_PREFIX)):
         raise ValueError("Unsafe cached model folder name.")
     base = model_cache_dir.resolve(strict=False)
     target = (base / folder_name).resolve(strict=False)
@@ -68,12 +73,31 @@ def is_model_cache_ready(model_folder: Path) -> bool:
     try:
         if snapshots.exists():
             for snapshot in snapshots.iterdir():
-                if snapshot.is_dir() and REQUIRED_MODEL_FILES.issubset({child.name for child in snapshot.iterdir()}):
+                if snapshot.is_dir() and _snapshot_ready(snapshot, model_folder.name.startswith(AMD_MODEL_CACHE_PREFIX)):
                     return True
             return False
-        return REQUIRED_MODEL_FILES.issubset({child.name for child in model_folder.iterdir()})
+        return _snapshot_ready(model_folder, model_folder.name.startswith(AMD_MODEL_CACHE_PREFIX))
     except OSError:
         return False
+
+
+def _snapshot_ready(folder: Path, amd: bool) -> bool:
+    present = {child.name for child in folder.iterdir() if child.is_file() and child.stat().st_size > 0}
+    if not amd:
+        return REQUIRED_MODEL_FILES.issubset(present)
+    required = {"config.json", "generation_config.json", "preprocessor_config.json", "tokenizer_config.json"}
+    if not required.issubset(present) or not ("tokenizer.json" in present or {"vocab.json", "merges.txt"}.issubset(present)):
+        return False
+    if "model.safetensors" in present:
+        return True
+    if "model.safetensors.index.json" in present:
+        try:
+            index = json.loads((folder / "model.safetensors.index.json").read_text(encoding="utf-8"))
+            shards = set(index["weight_map"].values())
+            return bool(shards) and shards.issubset(present)
+        except (ValueError, KeyError, TypeError):
+            return False
+    return False
 
 
 def format_size(size_bytes: int) -> str:
