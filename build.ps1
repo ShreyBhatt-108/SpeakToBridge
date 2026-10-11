@@ -47,7 +47,7 @@ if ($AmdRuntime) {
     & $pythonCmd -c "import torch; from transformers import WhisperProcessor, WhisperForConditionalGeneration; assert torch.version.hip, 'Install official ROCm PyTorch before building an AMD installer'; print('Bundling ROCm', torch.version.hip)"
     if ($LASTEXITCODE -ne 0) { throw "AMD runtime verification failed." }
     $backendArgs = @("--collect-all", "torch", "--collect-all", "transformers")
-    $sdkPackages = & $pythonCmd -c "import importlib.metadata as m; print('\n'.join(sorted({p.split('/')[0] for d in m.distributions() if d.metadata['Name'].lower().replace('_','-').startswith('rocm') for p in map(str, d.files or []) if p.split('/')[0].startswith('_rocm')})))"
+    $sdkPackages = & $pythonCmd -c "import importlib.metadata as m; print('\n'.join(sorted({p.split('/')[0] for d in m.distributions() if d.metadata['Name'].lower().replace('_','-').startswith('rocm') for p in map(str, d.files or []) if p.split('/')[0].startswith(('_rocm', 'rocm')) and p.split('/')[0].isidentifier() and 'devel' not in p.split('/')[0]})))"
     if ($LASTEXITCODE -ne 0) { throw "Could not discover ROCm SDK packages." }
     foreach ($sdkPackage in $sdkPackages) {
         if ($sdkPackage.Trim()) { $backendArgs += @("--collect-all", $sdkPackage.Trim()) }
@@ -57,12 +57,12 @@ if ($AmdRuntime) {
 if ($LASTEXITCODE -ne 0) { throw "Dependency verification failed." }
 & $pythonCmd -m PyInstaller --noconfirm --windowed --onedir --noupx --name SpeakToBridge --specpath ".\build" @backendArgs `
     --collect-data faster_whisper `
-    --add-data "SpeakToBridge\dictation_begin.wav;SpeakToBridge" `
-    --add-data "SpeakToBridge\reverse_dictation_end.mp3;SpeakToBridge" `
-    --add-data "SpeakToBridge\status_processing.mp3;SpeakToBridge" `
-    --add-data "SpeakToBridge\status_success.mp3;SpeakToBridge" `
-    --add-data "SpeakToBridge\status_failure.mp3;SpeakToBridge" `
-    .\launcher.py
+    --add-data "$PSScriptRoot\SpeakToBridge\dictation_begin.wav;SpeakToBridge" `
+    --add-data "$PSScriptRoot\SpeakToBridge\reverse_dictation_end.mp3;SpeakToBridge" `
+    --add-data "$PSScriptRoot\SpeakToBridge\status_processing.mp3;SpeakToBridge" `
+    --add-data "$PSScriptRoot\SpeakToBridge\status_success.mp3;SpeakToBridge" `
+    --add-data "$PSScriptRoot\SpeakToBridge\status_failure.mp3;SpeakToBridge" `
+    "$PSScriptRoot\launcher.py"
 if ($LASTEXITCODE -ne 0) { throw "PyInstaller build failed." }
 
 if (-not (Test-Path ".\dist\SpeakToBridge\SpeakToBridge.exe")) {

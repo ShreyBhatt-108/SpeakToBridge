@@ -39,6 +39,11 @@ Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription:
 [Files]
 Source: "dist\SpeakToBridge\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
+[InstallDelete]
+; Replace packaged dependencies when switching CPU/AMD builds or Python ABIs.
+; User settings and models live separately in LOCALAPPDATA\SpeakToBridge.
+Type: filesandordirs; Name: "{app}\_internal"
+
 [Icons]
 Name: "{group}\Speak to Bridge"; Filename: "{app}\SpeakToBridge.exe"
 Name: "{autodesktop}\Speak to Bridge"; Filename: "{app}\SpeakToBridge.exe"; Tasks: desktopicon

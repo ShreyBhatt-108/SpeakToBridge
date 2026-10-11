@@ -52,13 +52,16 @@ GPU availability is not required on the build host. Set
 `SPEAK_TO_BRIDGE_BUILD_PYTHON` to that interpreter and run `build.ps1 -AmdRuntime`.
 The script installs the ordinary hash lockfiles, reconciles the explicitly pinned
 AMD model dependencies from `requirements-amd.txt`, verifies ROCm imports, and
-bundles torch, Transformers and all ROCm SDK packages. This AMD dependency layer
+bundles torch, Transformers and the ROCm SDK runtime packages. This AMD dependency layer
 is version-pinned but does not yet have a complete hash lockfile.
 
 The output is `dist\SpeakToBridge-AMD-Setup.exe`. Build the ordinary CPU installer
 first if shipping both; its installer remains in `dist` while the portable folder
 is replaced by the AMD build. Generated PyInstaller specs are stored under `build`.
 Do not include private walkthroughs or local build-tool environments in a release.
+The installer replaces the old `_internal` dependency directory during an upgrade
+to prevent stale Python extensions and conflicting package metadata when switching
+between CPU and AMD builds. App user data is stored outside that directory.
 
 Before uploading, execute the packaged `SpeakToBridge.exe --check-hardware`
 diagnostic and a CPU transcription test using `--cpu --wav`. For the AMD build,

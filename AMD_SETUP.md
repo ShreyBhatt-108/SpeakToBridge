@@ -104,6 +104,10 @@ CPU-only mode, loading and inference fallback, prompt forwarding, long audio,
 silence handling, and model caches. **Actual Radeon 8060S inference and performance
 remain unverified until the command above is run on the new computer.**
 
+The actual Transformers adapter also passed short and longer-than-30-second
+speech inference on CPU. The ordinary packaged build passed a real CPU
+transcription test. These checks do not establish GPU kernel compatibility.
+
 ## Upstream documentation
 
 - [AMD Windows compatibility matrix](https://rocmdocs.amd.com/projects/radeon-ryzen/en/latest/docs/compatibility/compatibilityryz/windows/windows_compatibility.html)

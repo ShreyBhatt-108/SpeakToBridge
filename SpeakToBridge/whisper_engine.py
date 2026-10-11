@@ -71,7 +71,7 @@ class WhisperEngine:
             self._amd_device_index, self._amd_device_name = candidate
             return "rocm", "float16"
         if self._runtime_mode == "amd_gpu":
-            self._emit_status("AMD GPU runtime unavailable. Using CPU; run scripts/setup_amd.ps1 on the AMD computer.")
+            self._emit_status("AMD GPU runtime or compatible driver unavailable. Using CPU; check the hardware report and AMD setup guide.")
             return "cpu", "int8"
         if self._runtime_mode == "cpu_auto_gpu" and _has_cuda_device():
             return "cuda", "float16"
