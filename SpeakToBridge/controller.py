@@ -64,6 +64,8 @@ def _word_accuracy(expected: str, actual: str) -> float | None:
 
 
 class DictationController(QObject):
+    runtime_changed = Signal(str)
+    transcription_backend_changed = Signal(str)
     status_changed = Signal(str)
     transcript_ready = Signal(str)
     error_occurred = Signal(str)
@@ -90,6 +92,7 @@ class DictationController(QObject):
             vad_mode=config.vad_mode,
             model_cache_dir=model_cache_dir,
             status_callback=self.status_changed.emit,
+            runtime_callback=self.runtime_changed.emit,
         )
         self._busy_lock = threading.Lock()
         self._speech_lock = threading.Lock()
@@ -294,6 +297,8 @@ class DictationController(QObject):
             if glossary_prompt:
                 initial_prompt_parts.append(glossary_prompt)
             text = self._engine.transcribe(audio, initial_prompt=" ".join(initial_prompt_parts))
+            if text.strip():
+                self.transcription_backend_changed.emit(self.runtime_description)
             text = self._word_bank.apply(text)
             text = self._cleanup_transcript(text)
             text = self._finalize_transcript(text)
@@ -325,6 +330,8 @@ class DictationController(QObject):
     def _analyze_microphone_test(self, audio, quality: dict[str, float | str]) -> None:  # noqa: ANN001
         try:
             transcript = self._engine.transcribe(audio)
+            if transcript.strip():
+                self.transcription_backend_changed.emit(self.runtime_description)
             accuracy = _word_accuracy(self._microphone_test_phrase, transcript)
             self.microphone_test_finished.emit({
                 "quality": quality,

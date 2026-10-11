@@ -6,23 +6,71 @@ what distinguishes an AMD build from NVIDIA CUDA or CPU-only PyTorch.
 from __future__ import annotations
 
 from pathlib import Path
+from contextlib import contextmanager
+import sys
+import logging
+import importlib.metadata
 
 import numpy as np
 
 
-def amd_device() -> tuple[int, str] | None:
-    try:
-        import torch
+LOGGER = logging.getLogger(__name__)
+_rocm_import_attempted = False
 
-        if not torch.version.hip or not torch.cuda.is_available():
-            return None
-        for index in range(torch.cuda.device_count()):
-            name = torch.cuda.get_device_name(index)
-            if "8060" in name:
-                return index, name
-        return 0, torch.cuda.get_device_name(0)
-    except Exception:
+
+@contextmanager
+def optional_runtime_import():
+    # An unavailable optional DLL should produce a logged Python error and CPU
+    # fallback, rather than a Windows loader dialog. This does not change any
+    # security policy or permit a blocked DLL to load.
+    previous_mode = None
+    kernel = None
+    if sys.platform == "win32":
+        import ctypes
+        from ctypes import wintypes
+        kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel.SetThreadErrorMode.argtypes = [wintypes.DWORD, ctypes.POINTER(wintypes.DWORD)]
+        kernel.SetThreadErrorMode.restype = wintypes.BOOL
+        kernel.GetThreadErrorMode.restype = wintypes.DWORD
+        old_mode = wintypes.DWORD()
+        if kernel.SetThreadErrorMode(kernel.GetThreadErrorMode() | 0x8001, ctypes.byref(old_mode)):
+            previous_mode = old_mode.value
+    try:
+        yield
+    finally:
+        if previous_mode is not None:
+            kernel.SetThreadErrorMode(previous_mode, None)
+
+
+def rocm_import_attempted() -> bool:
+    # Failed torch imports can leave native OpenMP DLLs loaded even after Python
+    # removes torch from sys.modules. Keep CPU inference isolated in that case.
+    return _rocm_import_attempted
+
+
+def amd_device() -> tuple[int, str] | None:
+    global _rocm_import_attempted
+    try:
+        try:
+            _rocm_import_attempted |= "rocm" in importlib.metadata.version("torch").lower()
+        except importlib.metadata.PackageNotFoundError:
+            pass
+        with optional_runtime_import():
+            import torch
+
+            if not torch.version.hip or not torch.cuda.is_available():
+                return None
+            for index in range(torch.cuda.device_count()):
+                name = torch.cuda.get_device_name(index)
+                if "8060" in name:
+                    return index, name
+            return 0, torch.cuda.get_device_name(0)
+    except ModuleNotFoundError:
         return None
+    except Exception:
+        LOGGER.exception("AMD runtime unavailable; CPU fallback remains available")
+        return None
+
 
 
 class AmdWhisperModel:
@@ -33,6 +81,11 @@ class AmdWhisperModel:
         self._torch = torch
         self._device = f"cuda:{device_index}"
         repository = f"openai/whisper-{model_name}"
+        # A local_dir download contains regular files readable by both Windows
+        # and WSL, unlike Linux-only symlinks written on a mounted NTFS drive.
+        shared_model = cache_dir / f"openai-whisper-{model_name}"
+        if (shared_model / ".speak_to_bridge_ready").is_file():
+            repository = str(shared_model)
         self._processor = WhisperProcessor.from_pretrained(repository, cache_dir=str(cache_dir))
         self._model = WhisperForConditionalGeneration.from_pretrained(
             repository,

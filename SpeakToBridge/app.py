@@ -215,6 +215,8 @@ class SpeakToBridgeRuntime(QObject):
         self._hotkey.read_hotkey_pressed.connect(self._on_read_hotkey_pressed)
         self._hotkey.listener_error.connect(self._on_error)
 
+        self._controller.runtime_changed.connect(self._window.set_loaded_backend)
+        self._controller.transcription_backend_changed.connect(self._window.set_last_transcription_backend)
         self._controller.status_changed.connect(self._set_status)
         self._controller.error_occurred.connect(self._on_error)
         self._controller.transcript_ready.connect(self._on_transcript_ready)
@@ -605,12 +607,13 @@ class SpeakToBridgeRuntime(QObject):
 
     def _load_model_cache_entries(self, generation: int) -> None:
         from .amd_whisper import amd_device
-        from .model_storage import AMD_MODEL_CACHE_PREFIX, MODEL_CACHE_PREFIX
+        from .wsl_whisper import wsl_enabled
+        from .model_storage import AMD_MODEL_CACHE_PREFIX, SHARED_AMD_MODEL_CACHE_PREFIX, MODEL_CACHE_PREFIX
 
         rows: list[tuple[str, str, str, bool]] = []
         error = ""
-        use_amd = self._config.runtime_mode != "cpu" and amd_device() is not None
-        prefix = AMD_MODEL_CACHE_PREFIX if use_amd else MODEL_CACHE_PREFIX
+        use_amd = self._config.runtime_mode != "cpu" and (wsl_enabled() or amd_device() is not None)
+        prefix = (AMD_MODEL_CACHE_PREFIX, SHARED_AMD_MODEL_CACHE_PREFIX) if use_amd else MODEL_CACHE_PREFIX
         try:
             models = list_cached_models(self._model_cache_dir)
             for item in models:

@@ -7,16 +7,28 @@ import threading
 from pathlib import Path
 
 import numpy as np
-from faster_whisper import WhisperModel
+# Hub reads this flag at import time, so set it before importing faster-whisper.
+os.environ.setdefault("HF_HUB_DISABLE_XET", "1")
 
+# CTranslate2 eagerly imports optional conversion utilities, which import torch.
+# Inference does not need those utilities. Keep ROCm out of startup and CPU mode;
+# amd_device() can still import the real torch package when GPU mode is selected.
+_torch_was_absent = "torch" not in sys.modules
+if _torch_was_absent:
+    sys.modules["torch"] = None
+try:
+    from faster_whisper import WhisperModel
+finally:
+    if _torch_was_absent:
+        sys.modules.pop("torch", None)
+
+from .wsl_whisper import WslWhisperModel, wsl_enabled
 from .model_storage import is_model_cache_ready
-from .amd_whisper import AmdWhisperModel, amd_device
+from .amd_whisper import AmdWhisperModel, amd_device, rocm_import_attempted
 
 
 LOGGER = logging.getLogger(__name__)
 
-# Avoid Hugging Face Xet transport on Windows where it can stall for some users.
-os.environ.setdefault("HF_HUB_DISABLE_XET", "1")
 
 
 def _has_cuda_device() -> bool:
@@ -37,12 +49,14 @@ class WhisperEngine:
         vad_mode: str,
         model_cache_dir: Path,
         status_callback=None,  # noqa: ANN001
+        runtime_callback=None,  # noqa: ANN001
     ) -> None:
         self._model_name = model_name
         self._language = language
         self._runtime_mode = runtime_mode
         self._vad_mode = vad_mode
         self._model_cache_dir = model_cache_dir
+        self._runtime_callback = runtime_callback
         self._status_callback = status_callback
         self._model: WhisperModel | AmdWhisperModel | None = None
         self._gpu_failed = False
@@ -55,18 +69,26 @@ class WhisperEngine:
         self._loading_in_progress = False
         self._known_cached_models: set[str] = set()
 
+    def _release_model(self) -> None:
+        # WSL readers hold their process until explicitly closed.
+        if getattr(self._model, "_wsl_worker", False) is True:
+            self._model.close()
+        self._model = None
+
     def update_model(self, model_name: str) -> None:
         if model_name == self._model_name:
             return
         with self._model_cv:
             self._model_name = model_name
-            self._model = None
-            self._runtime_description = "Not loaded yet"
+            self._release_model()
+            self._set_runtime_description("Not loaded yet")
             self._model_cv.notify_all()
 
     def _resolve_runtime(self) -> tuple[str, str]:
         if self._runtime_mode == "cpu" or self._gpu_failed:
             return "cpu", "int8"
+        if wsl_enabled():
+            return "wsl_rocm", "float16"
         candidate = amd_device()
         if candidate is not None:
             self._amd_device_index, self._amd_device_name = candidate
@@ -82,12 +104,17 @@ class WhisperEngine:
     def runtime_description(self) -> str:
         return self._runtime_description
 
+    def _set_runtime_description(self, description: str) -> None:
+        self._runtime_description = description
+        if self._runtime_callback is not None:
+            self._runtime_callback(description)
+
     def update_runtime(self, runtime_mode: str) -> None:
         with self._model_cv:
             self._runtime_mode = runtime_mode
             self._gpu_failed = False
-            self._model = None
-            self._runtime_description = "Not loaded yet"
+            self._release_model()
+            self._set_runtime_description("Not loaded yet")
             self._model_cv.notify_all()
 
     def _emit_status(self, message: str) -> None:
@@ -124,9 +151,9 @@ class WhisperEngine:
                 runtime_mode = self._runtime_mode
                 device, compute_type = self._resolve_runtime()
 
-            source = (f"Hugging Face Hub (openai/whisper-{model_name})" if device == "rocm"
+            source = (f"Hugging Face Hub (openai/whisper-{model_name})" if device in ("rocm", "wsl_rocm")
                       else self._model_source(model_name))
-            if device == "rocm":
+            if device in ("rocm", "wsl_rocm"):
                 self._emit_status(f"Preparing AMD GPU model '{model_name}' from {source}; downloading missing files.")
             elif self._is_model_cached_locally(model_name):
                 self._emit_status(f"Loading model '{model_name}' from local cache.")
@@ -139,11 +166,15 @@ class WhisperEngine:
                 compute_type,
             )
             try:
-                if device == "rocm":
-                    loaded_model = AmdWhisperModel(model_name, self._model_cache_dir, self._amd_device_index)
+                if device in ("rocm", "wsl_rocm"):
+                    if device == "wsl_rocm":
+                        loaded_model = WslWhisperModel(model_name, self._model_cache_dir)
+                        self._amd_device_name = loaded_model.device_name
+                    else:
+                        loaded_model = AmdWhisperModel(model_name, self._model_cache_dir, self._amd_device_index)
                 else:
                     torch = sys.modules.get("torch")
-                    if device == "cpu" and getattr(getattr(torch, "version", None), "hip", None):
+                    if device == "cpu" and (rocm_import_attempted() or getattr(getattr(torch, "version", None), "hip", None)):
                         from .cpu_worker import CpuWhisperWorker
                         loaded_model = CpuWhisperWorker(model_name, self._model_cache_dir)
                     else:
@@ -168,14 +199,16 @@ class WhisperEngine:
                 self._model_cv.notify_all()
                 # If the requested model changed while loading, discard and load current target.
                 if self._model_name != model_name or self._runtime_mode != runtime_mode:
+                    if getattr(loaded_model, "_wsl_worker", False) is True:
+                        loaded_model.close()
                     continue
                 self._device = device
                 self._compute_type = compute_type
                 self._model = loaded_model
-                if device != "rocm":
+                if device not in ("rocm", "wsl_rocm"):
                     self._known_cached_models.add(model_name)
-                self._runtime_description = (
-                    f"AMD ROCm GPU: {self._amd_device_name} (FP16)" if device == "rocm"
+                self._set_runtime_description(
+                    f"AMD ROCm GPU: {self._amd_device_name} (FP16{', WSL' if device == 'wsl_rocm' else ''})" if device in ("rocm", "wsl_rocm")
                     else "NVIDIA CUDA GPU (FP16)" if device == "cuda" else "CPU (INT8)"
                 )
                 self._emit_status(f"Model ready. Using {self._runtime_description}.")
@@ -216,9 +249,9 @@ class WhisperEngine:
                 raise
             LOGGER.exception("GPU transcription failed; retrying recording on CPU")
             with self._model_cv:
-                self._model = None
+                self._release_model()
                 self._gpu_failed = True
-                self._runtime_description = "Not loaded yet"
+                self._set_runtime_description("Not loaded yet")
             self._emit_status("GPU transcription failed. Retrying on CPU.")
             return self._transcribe(audio, initial_prompt)
 
@@ -228,7 +261,7 @@ class WhisperEngine:
         self._ensure_model()
         assert self._model is not None
         self._emit_status(f"Transcribing with {self._runtime_description}.")
-        if isinstance(self._model, AmdWhisperModel):
+        if isinstance(self._model, (AmdWhisperModel, WslWhisperModel)):
             return self._model.transcribe(audio, self._language, initial_prompt, self._vad_options())
         options = {
             "language": self._language,

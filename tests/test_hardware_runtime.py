@@ -16,6 +16,12 @@ from SpeakToBridge.whisper_engine import WhisperEngine
 
 
 class RuntimeTests(unittest.TestCase):
+    def setUp(self):
+        # Native-runtime tests must not inherit the user's persisted WSL choice.
+        selection = patch("SpeakToBridge.whisper_engine.wsl_enabled", return_value=False)
+        selection.start()
+        self.addCleanup(selection.stop)
+
     def engine(self, mode="cpu_auto_gpu"):
         return WhisperEngine("tiny", "en", mode, "off", Path("unused-test-cache"))
 
@@ -66,6 +72,15 @@ class RuntimeTests(unittest.TestCase):
             worker.assert_called_once_with("tiny", Path("unused-test-cache"))
             cpu.assert_not_called()
             self.assertEqual(engine.runtime_description, "CPU (INT8)")
+
+    def test_failed_rocm_import_keeps_cpu_in_isolated_worker(self):
+        with patch("SpeakToBridge.whisper_engine.rocm_import_attempted", return_value=True), \
+             patch("SpeakToBridge.cpu_worker.CpuWhisperWorker") as worker, \
+             patch("SpeakToBridge.whisper_engine.WhisperModel") as cpu:
+            engine = self.engine("cpu")
+            engine.warm_model()
+            worker.assert_called_once_with("tiny", Path("unused-test-cache"))
+            cpu.assert_not_called()
 
     def test_gpu_inference_failure_retries_same_audio_on_cpu_once(self):
         engine = self.engine()

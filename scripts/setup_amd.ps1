@@ -1,7 +1,11 @@
-param([string]$Python = "")
+param([string]$Python = "", [string]$EnvironmentPath = "")
 $ErrorActionPreference = "Stop"
 $projectRoot = Split-Path -Parent $PSScriptRoot
-$venvDir = Join-Path $projectRoot ".venv-amd"
+if (-not $EnvironmentPath) { $EnvironmentPath = $env:SPEAK_TO_BRIDGE_AMD_ENV }
+if (-not $EnvironmentPath) {
+    $EnvironmentPath = Join-Path ([Environment]::GetFolderPath("UserProfile")) ".venvs\amd-rocm-7.2.1-py312"
+}
+$venvDir = [System.IO.Path]::GetFullPath($EnvironmentPath)
 
 function Invoke-CheckedPython {
     param([string]$Executable, [string[]]$Arguments)
@@ -10,8 +14,12 @@ function Invoke-CheckedPython {
 }
 
 Write-Host "Requires Windows 11, x64 Python 3.12, and AMD's ROCm-compatible graphics driver."
-Write-Host "This installs AMD ROCm 7.2.1 / PyTorch 2.9.1 in a separate environment."
-if ($Python) {
+Write-Host "Shared AMD environment: $venvDir"
+$amdPython = Join-Path $venvDir "Scripts\python.exe"
+if (Test-Path -LiteralPath $amdPython) {
+    Invoke-CheckedPython $amdPython @("-c", "import sys, struct; assert sys.version_info[:2] == (3, 12) and struct.calcsize('P') == 8, 'Existing environment must use x64 Python 3.12'")
+    Write-Host "Reusing existing environment."
+} elseif ($Python) {
     Invoke-CheckedPython $Python @("-c", "import sys, struct; assert sys.version_info[:2] == (3, 12) and struct.calcsize('P') == 8, 'Requires x64 Python 3.12'")
     Invoke-CheckedPython $Python @("-m", "venv", $venvDir)
 } else {

@@ -218,6 +218,16 @@ class SettingsWindow(QMainWindow):
         self.active_model_value.setFocusPolicy(Qt.NoFocus)
         self.active_model_value.setAccessibleName("Active model")
         model_form.addRow("Active model:", self.active_model_value)
+        self.loaded_backend_value = QLineEdit("Not loaded yet")
+        self.loaded_backend_value.setReadOnly(True)
+        self.loaded_backend_value.setAccessibleName("Loaded backend")
+        self.loaded_backend_value.setAccessibleDescription("The backend actually loaded, rather than the selected preference.")
+        model_form.addRow("Loaded backend:", self.loaded_backend_value)
+        self.last_transcription_backend_value = QLineEdit("No transcription this session")
+        self.last_transcription_backend_value.setReadOnly(True)
+        self.last_transcription_backend_value.setAccessibleName("Last transcription backend")
+        self.last_transcription_backend_value.setAccessibleDescription("CPU or GPU used for the last successful transcription in this session, including microphone tests.")
+        model_form.addRow("Last transcription:", self.last_transcription_backend_value)
         self.runtime_combo = QComboBox()
         self.runtime_combo.setAccessibleName("Processing device")
         for label, value in RUNTIME_CHOICES.items():
@@ -579,6 +589,16 @@ class SettingsWindow(QMainWindow):
         announcement.setPoliteness(QAccessible.AnnouncementPoliteness.Assertive)
         QAccessible.updateAccessibility(announcement)
         self.microphone_test_result.setFocus()
+
+    def set_loaded_backend(self, description: str) -> None:
+        self.loaded_backend_value.setText(description)
+        self.loaded_backend_value.setToolTip(description)
+        self.loaded_backend_value.setCursorPosition(0)
+
+    def set_last_transcription_backend(self, description: str) -> None:
+        self.last_transcription_backend_value.setText(description)
+        self.last_transcription_backend_value.setToolTip(description)
+        self.last_transcription_backend_value.setCursorPosition(0)
 
     def focus_status(self) -> None:
         self.status_value.setFocus()

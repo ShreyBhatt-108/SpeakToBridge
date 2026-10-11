@@ -23,7 +23,9 @@ preferences, and status feedback that works with JAWS.
 
 AMD Strix Halo / Radeon 8060S GPU processing is available through the optional
 ROCm backend. See [AMD setup and verification](AMD_SETUP.md). CPU processing
-continues to work without the optional runtime.
+continues to work without the optional runtime. The shared WSL ROCm backend has
+been verified on a Ryzen AI Max+ 388 / Radeon 8060S with Tiny and Small models.
+These repairs are available in source; the v1.5.0-rc.1 installer predates them.
 
 - **Local transcription:** recorded audio stays on the computer after the
   selected Whisper model has been downloaded.
@@ -72,6 +74,89 @@ this repository's Releases page before running it.
 
 On first transcription, the selected Whisper model is downloaded and stored in
 local application data. Transcription can run offline after that model is ready.
+
+## Python and processing backends
+
+The Windows installer bundles its own Python interpreter and dependencies.
+You can use the app with no Python installed, or alongside another Python
+version. Installing Python 3.15 does not change the app's bundled Python.
+Source development and GPU environments must still use versions supported by
+their native packages; arbitrary Python versions cannot share the same binaries.
+
+In Settings > Model, **Processing device** is your preference, **Loaded backend**
+is the runtime actually loaded, and **Last transcription** shows the CPU or GPU
+that produced the last successful transcript in this session. The latter also
+includes microphone tests and remains visible during the next recording. It
+starts empty each session rather than claiming an untested GPU is already active.
+Automatic mode can fall back to CPU, so selecting GPU is not proof of GPU use.
+These indicators do not add anything to the text inserted into another app.
+
+### How WSL connects the Windows app to AMD ROCm
+
+WSL2 runs a real Linux kernel in a lightweight virtual machine managed by
+Windows. Ubuntu is the Linux operating system inside it. The Windows GUI stays
+native: it handles microphone recording, hotkeys, silence filtering, Word Bank
+corrections and text insertion. Only the AMD inference worker runs in Ubuntu.
+
+```mermaid
+flowchart LR
+    A[Windows microphone and GUI] -->|Audio and prompt through local pipes| B[WSL Ubuntu worker]
+    B --> C[Linux Python and PyTorch]
+    C --> D[ROCm HIP and ROCDXG]
+    D --> E[WSL GPU interface /dev/dxg]
+    E --> F[Windows AMD driver]
+    F --> G[Radeon GPU]
+    B -->|Transcript through local pipes| A
+    A --> H[Text inserted into active app]
+    A -->|Worker unavailable or fails| I[Windows CPU transcription]
+```
+
+`wsl.exe` starts the worker using a shared interpreter at `/opt/amd-ai/bin/python`.
+Local stdin/stdout pipes carry audio, language and the Word Bank prompt as JSON;
+there is no cloud transcription service or local network listener. PyTorch asks
+ROCm/HIP to execute model operations. AMD's ROCDXG routes those requests through
+Microsoft's DXCore and `/dev/dxg` to the existing Windows GPU driver and physical
+Radeon. The Linux kernel does not need a separate native amdgpu kernel driver.
+
+The Linux environment contains ROCm 7.14.1, PyTorch 2.12.0+rocm7.14.1 with gfx1151
+packages and Transformers 4.57.6. This differs from the original Windows bundle's
+ROCm 7.2.1/PyTorch 2.9.1. Native Windows DLLs and Linux shared libraries are different
+binaries: using the Linux runtime avoids loading the unsigned Windows ROCm DLL
+that Smart App Control rejected on the tested laptop. Smart App Control stays on.
+
+Windows files are accessible under `/mnt/c`. GPU Whisper weights are regular
+files in the existing app cache's `models/openai-whisper-<size>` directories, so a
+later native AMD setup can reuse them. CPU CTranslate2 weights have a different
+format. Settings and Word Bank remain in Windows application data.
+
+For installation and opt-in configuration, see [AMD_SETUP.md](AMD_SETUP.md).
+Keep the configured worker checkout path available. WSL configurations are per
+Windows user; another user's installation needs its own setup. The standard CPU
+installer still needs neither WSL nor a system Python installation.
+
+To reuse the same environment for local AI experiments, run this in PowerShell:
+
+```powershell
+wsl -d Ubuntu-24.04
+```
+
+Then in Ubuntu:
+
+```bash
+source /opt/amd-ai/bin/activate
+python -c "import torch; print(torch.cuda.get_device_name(0))"
+```
+
+PyTorch uses its `torch.cuda` API for AMD HIP devices as well. Windows Python and
+Linux Python have separate packages; activate this Linux environment for ROCm
+experiments. To reuse downloaded Whisper weights with Transformers, load their
+local `/mnt/c/.../SpeakToBridge/models/openai-whisper-small` directory directly.
+Later native Windows ROCm is possible with a compatible supported runtime and
+Windows trust requirements resolved; copying Linux packages into Windows will
+not provide a native installation.
+
+References: [Microsoft WSL FAQ](https://learn.microsoft.com/en-us/windows/wsl/faq),
+[AMD WSL/ROCDXG guide](https://rocm.docs.amd.com/projects/radeon-ryzen/en/docs-7.2.1/docs/install/installrad/wsl/howto_wsl.html).
 
 ## Everyday use
 

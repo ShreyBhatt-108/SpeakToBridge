@@ -8,5 +8,13 @@ if __name__ == "__main__":
     if "--check-hardware" in sys.argv[1:]:
         from SpeakToBridge.diagnostics import main
         raise SystemExit(main([arg for arg in sys.argv[1:] if arg != "--check-hardware"]))
-    from SpeakToBridge.app import run
-    raise SystemExit(run())
+    # Record import failures too: app.run() configures logging too late for them.
+    from SpeakToBridge.logging_utils import configure_logging
+    configure_logging()
+    try:
+        from SpeakToBridge.app import run
+        raise SystemExit(run())
+    except Exception:
+        import logging
+        logging.getLogger(__name__).exception("Application startup failed")
+        raise

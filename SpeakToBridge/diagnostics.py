@@ -12,7 +12,8 @@ from pathlib import Path
 
 import numpy as np
 
-from .amd_whisper import amd_device
+from .amd_whisper import amd_device, optional_runtime_import
+from .wsl_whisper import WslWhisperModel, wsl_enabled
 from .constants import APP_VERSION
 from .paths import get_app_data_dir, get_model_cache_dir
 from .whisper_engine import WhisperEngine
@@ -40,22 +41,33 @@ def main(arguments: list[str]) -> int:
         except Exception as exc:
             result["hardware_query_error"] = str(exc)
     try:
-        try:
-            import torch
-            from transformers import WhisperForConditionalGeneration, WhisperProcessor
+        if args.cpu:
+            result["optional_runtime_probe_skipped"] = "CPU-only diagnostic"
+        elif wsl_enabled():
+            result["gpu_transport"] = "WSL"
+            try:
+                result.update(WslWhisperModel.probe(get_model_cache_dir()))
+            except Exception as exc:
+                result.update(amd_gpu=None, optional_runtime_error=str(exc), optional_runtime_traceback=traceback.format_exc())
+        else:
+            try:
+                with optional_runtime_import():
+                    import torch
+                    from transformers import WhisperForConditionalGeneration, WhisperProcessor
 
-            result.update(rocm_version=torch.version.hip, torch_version=torch.__version__, whisper_imports=True)
-        except Exception as exc:
-            result.update(rocm_version=None, whisper_imports=False, optional_runtime_error=str(exc))
-        candidate = amd_device() if not args.cpu else None
-        result["amd_gpu"] = candidate[1] if candidate else None
+                    result.update(rocm_version=torch.version.hip, torch_version=torch.__version__, whisper_imports=True)
+            except Exception as exc:
+                result.update(rocm_version=None, whisper_imports=False, optional_runtime_error=str(exc), optional_runtime_traceback=traceback.format_exc())
+        candidate = amd_device() if not args.cpu and not wsl_enabled() else None
+        if not wsl_enabled() or args.cpu:
+            result["amd_gpu"] = candidate[1] if candidate else None
         if candidate:
             import torch
             matrix = torch.ones((32, 32), device=f"cuda:{candidate[0]}", dtype=torch.float16)
             result["gpu_matrix_test"] = (matrix @ matrix).float().mean().item() == 32
             if not result["gpu_matrix_test"]:
                 raise RuntimeError("GPU FP16 matrix multiplication failed")
-        if args.require_amd and not candidate:
+        if args.require_amd and not result.get("amd_gpu"):
             exit_code = 1
         if args.wav:
             with wave.open(str(args.wav), "rb") as wav:
@@ -65,6 +77,8 @@ def main(arguments: list[str]) -> int:
             engine = WhisperEngine(args.model, "en", "cpu" if args.cpu else "cpu_auto_gpu", "pause_preserving", get_model_cache_dir())
             result["transcript"] = engine.transcribe(audio)
             result["actual_backend"] = engine.runtime_description
+            from .cpu_worker import CpuWhisperWorker
+            result["cpu_worker_isolated"] = isinstance(engine._model, CpuWhisperWorker)
             if args.require_amd and not engine.runtime_description.startswith("AMD ROCm"):
                 exit_code = 1
     except Exception:

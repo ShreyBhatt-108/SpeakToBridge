@@ -73,3 +73,39 @@ hardware. Publish as a prerelease while that hardware validation is pending.
 - The `dist\SpeakToBridge` directory is the portable build and does not provide a full install/uninstall experience.
 - Do not commit or upload `CODE_WALKTHROUGH_LOCAL.md`; it is intentionally ignored and private to the local developer workspace.
 - Normal uninstall preserves `%LOCALAPPDATA%\SpeakToBridge` user data.
+
+### Startup and Windows trust checks
+
+The installer is self-contained: end users need no Python installation. Its
+internal Python version follows the native wheel ABI, not the user's Python.
+
+`build.ps1` removes a versioned vendor ICU accidentally collected as
+`_internal/icuuc.dll`, which otherwise shadows Windows ICU and prevents QtCore
+from importing. Keep the DLL provenance and Qt startup checks in release QA.
+
+When `SPEAK_TO_BRIDGE_SIGNING_CERT_SHA1` is set, the build signs unsigned or
+invalidly signed EXE, DLL and PYD files before compiling the installer, preserving
+valid vendor signatures. Use a trusted code-signing certificate for Smart App
+Control compliance. The signing path still requires validation with a real
+certificate; self-signed signatures do not establish that trust.
+
+A CPU-required diagnostic must not import torch. GPU-required verification must
+fail if actual transcription uses CPU. Include the complete optional runtime
+traceback and `cpu_worker_isolated` field in target-hardware reports. A successful
+CPU fallback after a blocked AMD DLL does not establish Radeon inference.
+
+
+### WSL backend validation
+
+The optional WSL transport keeps the Windows GUI and CPU engine while running
+GPU inference in a separately installed, shared Linux environment. Its local
+configuration and mounted worker path are machine-specific; do not ship this
+laptop's AppData selection as a release default. `scripts/setup_wsl.sh` prepares
+Ubuntu 24.04's `/opt/amd-ai` using GPU-specific ROCm 7.14.1/PyTorch 2.12.0 wheels.
+
+For release QA, test packaged `--check-hardware --require-amd --wav` on actual
+hardware: both `gpu_matrix_test` and an AMD ROCm WSL `actual_backend` must pass.
+Also test `--cpu --wav` and an unavailable worker. The GPU-required check must
+return nonzero when transcription falls back, even if the CPU transcript succeeds.
+Verify model changes/cache refresh do not import native Windows ROCm when WSL
+is selected. Preserve the isolated native CPU worker and shared model cache.

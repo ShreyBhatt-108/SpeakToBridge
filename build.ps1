@@ -115,6 +115,21 @@ if (-not (Test-Path $expectedPortAudio)) {
     throw "Build failed: expected PortAudio binary was not packaged at '$expectedPortAudio'."
 }
 
+# PyInstaller can collect a vendor ICU as _internal\icuuc.dll. Qt 6.11
+# expects the unversioned Windows ICU exports; vendor ICU 78 exports suffixed
+# names instead, causing WinError 127 before the UI can open. The vendor file
+# has no inference consumer in this distribution. Keep it out of the DLL path.
+$bundledIcu = Join-Path $PSScriptRoot "dist\SpeakToBridge\_internal\icuuc.dll"
+if (Test-Path -LiteralPath $bundledIcu) {
+    $icuOriginalName = (Get-Item -LiteralPath $bundledIcu).VersionInfo.OriginalFilename
+    if ($icuOriginalName -match '^icuuc[0-9]+\.dll$') {
+        $icuBackup = Join-Path $PSScriptRoot "build\excluded-icu"
+        New-Item -ItemType Directory -Path $icuBackup -Force | Out-Null
+        Move-Item -LiteralPath $bundledIcu -Destination (Join-Path $icuBackup "icuuc.dll")
+        Write-Host "Excluded conflicting vendor ICU '$icuOriginalName'; Qt uses Windows ICU."
+    }
+}
+
 function Find-SignTool {
     $windowsKits = "C:\Program Files (x86)\Windows Kits\10\bin"
     if (-not (Test-Path $windowsKits)) {
@@ -133,8 +148,15 @@ if ($signingThumbprint) {
     if (-not $signTool) {
         throw "SPEAK_TO_BRIDGE_SIGNING_CERT_SHA1 is set, but signtool.exe was not found."
     }
-    & $signTool.FullName sign /sha1 $signingThumbprint /fd SHA256 /tr "http://timestamp.digicert.com" /td SHA256 `
-        ".\dist\SpeakToBridge\SpeakToBridge.exe"
+    # Smart App Control checks dependencies as well as the application EXE.
+    # Preserve valid vendor signatures; sign every otherwise unsigned PE file.
+    $nativeFiles = Get-ChildItem -LiteralPath (Join-Path $PSScriptRoot "dist\SpeakToBridge") -Recurse -File |
+        Where-Object { $_.Extension -in @(".exe", ".dll", ".pyd") }
+    foreach ($nativeFile in $nativeFiles) {
+        if ((Get-AuthenticodeSignature -LiteralPath $nativeFile.FullName).Status -eq "Valid") { continue }
+        & $signTool.FullName sign /sha1 $signingThumbprint /fd SHA256 /tr "http://timestamp.digicert.com" /td SHA256 $nativeFile.FullName
+        if ($LASTEXITCODE -ne 0) { throw "Code signing failed for '$($nativeFile.FullName)'." }
+    }
     if ($LASTEXITCODE -ne 0) {
         throw "Code signing failed for SpeakToBridge.exe."
     }
