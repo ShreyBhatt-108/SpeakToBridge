@@ -131,6 +131,29 @@ this PyTorch/ROCm backend currently uses FP16. The downloader selects the needed
 `model.safetensors` file and excludes redundant FP32 copies. Runtime Status
 distinguishes downloading from loading cached weights into GPU memory.
 
+The WSL GPU worker pauses its inference process after synchronizing completed
+GPU work, and wakes it for the next recording. This retains loaded weights while
+preventing ROCm background threads from consuming CPU continuously between
+recordings. The lightweight supervisor remains available; quitting the app
+closes both processes. These controls apply to SpeakToBridge's worker, not other
+AI experiments using the shared environment.
+
+Model preparation reports cache checks, PyTorch startup, weight loading and GPU
+transfer separately. On Linux ROCm, parameters are packed into one GPU transfer
+instead of hundreds of separate allocations and copies. This uses temporary
+extra RAM during loading and creates no additional model files. On the tested
+8060S, Large v3 preparation improved from about 51 seconds to 35 seconds, while
+an already-loaded transcription after an idle pause took about 2 seconds.
+Cache enumeration itself took about 0.07 seconds. Cold startup still needs to
+start PyTorch and load the 3.09 GB model; these figures are measurements on one
+laptop, not guaranteed timings.
+
+Feedback sounds use the latest event: a completion cue interrupts obsolete
+processing feedback immediately instead of waiting in a queue. The completion
+cue is a 450 ms WAV excerpt of the existing tone, played asynchronously after
+successful text insertion; its long decay and MP3 initialization are removed. The sound preference is
+preserved. The batching approach follows [AMD HIP performance guidance](https://rocm.docs.amd.com/projects/HIP/en/docs-6.2.2/how-to/performance_guidelines.html).
+
 Windows files are accessible under `/mnt/c`. GPU Whisper weights are regular
 files in the existing app cache's `models/openai-whisper-<size>` directories, so a
 later native AMD setup can reuse them. CPU CTranslate2 weights have a different

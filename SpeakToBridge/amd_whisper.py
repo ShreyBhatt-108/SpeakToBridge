@@ -74,7 +74,7 @@ def amd_device() -> tuple[int, str] | None:
 
 
 class AmdWhisperModel:
-    def __init__(self, model_name: str, cache_dir: Path, device_index: int) -> None:
+    def __init__(self, model_name: str, cache_dir: Path, device_index: int, status_callback=None) -> None:
         import torch
         from transformers import WhisperForConditionalGeneration, WhisperProcessor
 
@@ -87,6 +87,8 @@ class AmdWhisperModel:
         if (shared_model / ".speak_to_bridge_ready").is_file():
             repository = str(shared_model)
         self._processor = WhisperProcessor.from_pretrained(repository, cache_dir=str(cache_dir))
+        if status_callback:
+            status_callback("Reading cached model weights into memory.")
         self._model = WhisperForConditionalGeneration.from_pretrained(
             repository,
             cache_dir=str(cache_dir),
@@ -94,7 +96,30 @@ class AmdWhisperModel:
             # Standard attention avoids dependence on optional CUDA-only kernels.
             attn_implementation="eager",
             use_safetensors=True,
-        ).to(self._device).eval()
+        )
+        if sys.platform == "linux" and torch.version.hip:
+            # Hundreds of individual .to() allocations/copies are particularly
+            # expensive through WSL's GPU bridge. Transfer one flat FP16 buffer
+            # and give each parameter a view into it (preserving tied weights).
+            with torch.no_grad():
+                if status_callback:
+                    status_callback("Packing model weights for GPU transfer.")
+                parameters = list(self._model.parameters())
+                packed = torch.nn.utils.parameters_to_vector(parameters)
+                if status_callback:
+                    status_callback("Moving model weights into Radeon GPU memory.")
+                gpu_weights = packed.to(self._device)
+                torch.nn.utils.vector_to_parameters(gpu_weights, parameters)
+                del packed
+                for module in self._model.modules():
+                    for name, buffer in module._buffers.items():
+                        if buffer is not None:
+                            module._buffers[name] = buffer.to(self._device)
+            self._model.eval()
+        else:
+            if status_callback:
+                status_callback("Moving model weights into Radeon GPU memory.")
+            self._model = self._model.to(self._device).eval()
 
     def transcribe(self, audio: np.ndarray, language: str, initial_prompt: str, vad: dict) -> str:
         if vad.get("vad_filter"):

@@ -12,3 +12,7 @@ The following short sound effects are bundled as application feedback cues. They
 License: https://mixkit.co/license/
 
 Mixkit does not require attribution for these sound effects, but the sources are recorded here for provenance and future license review.
+
+`SpeakToBridge/status_success.wav` is a 450 ms PCM excerpt of
+`status_success.mp3`, with a short fade at the end, used for immediate
+completion feedback. It retains the source asset attribution above.

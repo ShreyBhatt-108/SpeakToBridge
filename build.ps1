@@ -60,7 +60,7 @@ if ($LASTEXITCODE -ne 0) { throw "Dependency verification failed." }
     --add-data "$PSScriptRoot\SpeakToBridge\dictation_begin.wav;SpeakToBridge" `
     --add-data "$PSScriptRoot\SpeakToBridge\reverse_dictation_end.mp3;SpeakToBridge" `
     --add-data "$PSScriptRoot\SpeakToBridge\status_processing.mp3;SpeakToBridge" `
-    --add-data "$PSScriptRoot\SpeakToBridge\status_success.mp3;SpeakToBridge" `
+    --add-data "$PSScriptRoot\SpeakToBridge\status_success.wav;SpeakToBridge" `
     --add-data "$PSScriptRoot\SpeakToBridge\status_failure.mp3;SpeakToBridge" `
     "$PSScriptRoot\launcher.py"
 if ($LASTEXITCODE -ne 0) { throw "PyInstaller build failed." }

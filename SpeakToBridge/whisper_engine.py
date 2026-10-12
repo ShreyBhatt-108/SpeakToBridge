@@ -75,6 +75,10 @@ class WhisperEngine:
             self._model.close()
         self._model = None
 
+    def close(self) -> None:
+        with self._model_cv:
+            self._release_model()
+
     def update_model(self, model_name: str) -> None:
         if model_name == self._model_name:
             return
@@ -154,7 +158,7 @@ class WhisperEngine:
             source = (f"Hugging Face Hub (openai/whisper-{model_name})" if device in ("rocm", "wsl_rocm")
                       else self._model_source(model_name))
             if device in ("rocm", "wsl_rocm"):
-                self._emit_status(f"Preparing AMD GPU model '{model_name}'; checking cached files.")
+                self._emit_status(f"Starting AMD GPU worker for '{model_name}'.")
             elif self._is_model_cached_locally(model_name):
                 self._emit_status(f"Loading model '{model_name}' from local cache.")
             else:

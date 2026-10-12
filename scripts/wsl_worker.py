@@ -6,6 +6,8 @@ import base64
 from contextlib import redirect_stdout
 import json
 import os
+import signal
+import subprocess
 from pathlib import Path
 import sys
 import traceback
@@ -14,6 +16,13 @@ _PROTOCOL_STDOUT = sys.stdout
 
 os.environ.setdefault("HF_HUB_DISABLE_XET", "1")
 os.environ.setdefault("HSA_ENABLE_DXG_DETECTION", "1")
+# This worker performs GPU inference. Keep CPU support work bounded and let
+# waiting OpenMP threads sleep; do not change the shared environment globally.
+os.environ.setdefault("OMP_NUM_THREADS", "2")
+os.environ.setdefault("MKL_NUM_THREADS", "2")
+os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+os.environ.setdefault("OMP_WAIT_POLICY", "PASSIVE")
+os.environ.setdefault("KMP_BLOCKTIME", "0")
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 
@@ -40,16 +49,80 @@ def prepare_model_cache(cache, model_name, status_callback=None):
     return model_dir
 
 
+def supervise_gpu_worker(args):
+    """Pause idle ROCm threads while retaining the loaded model in memory.
+
+    Stop only after the child has synchronized GPU work and replied. Forward
+    the reply after stopping, so a new request cannot race the pause.
+    """
+    child = subprocess.Popen(
+        [sys.executable, "-u", str(Path(__file__).resolve()), "--gpu-child",
+         "--cache", str(args.cache), "--model", args.model],
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, encoding="utf-8",
+    )
+    try:
+        for line in child.stdout:
+            reply = json.loads(line)
+            if reply.get("ready"):
+                os.kill(child.pid, signal.SIGSTOP)
+                send(reply)
+                break
+            send(reply)
+            if "error" in reply:
+                return 1
+        else:
+            raise RuntimeError("GPU child exited before becoming ready")
+        for request in sys.stdin:
+            os.kill(child.pid, signal.SIGCONT)
+            child.stdin.write(request)
+            child.stdin.flush()
+            for line in child.stdout:
+                reply = json.loads(line)
+                if "error" in reply:
+                    send(reply)
+                    return 1
+                if "text" in reply:
+                    os.kill(child.pid, signal.SIGSTOP)
+                    send(reply)
+                    break
+                send(reply)
+            else:
+                raise RuntimeError("GPU child exited during transcription")
+        return 0
+    finally:
+        if child.poll() is None:
+            os.kill(child.pid, signal.SIGCONT)
+            child.stdin.close()
+            try:
+                child.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                child.terminate()
+                child.wait(timeout=5)
+        child.stdout.close()
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--cache", required=True, type=Path)
     parser.add_argument("--model", default="tiny")
     parser.add_argument("--probe", action="store_true")
+    parser.add_argument("--gpu-child", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args()
     try:
+        if not args.probe and not args.gpu_child:
+            return supervise_gpu_worker(args)
+        if not args.probe:
+            send({"status": "Checking local GPU model files."})
+            with redirect_stdout(sys.stderr):
+                prepare_model_cache(args.cache, args.model, lambda message: send({"status": message}))
+            send({"status": "Starting WSL PyTorch runtime; model files are cached."})
         with redirect_stdout(sys.stderr):
             import numpy as np
             import torch
+            torch.set_num_threads(int(os.environ["OMP_NUM_THREADS"]))
+            torch.set_num_interop_threads(1)
+            if not args.probe:
+                send({"status": "Verifying Radeon GPU runtime."})
             if not torch.version.hip or not torch.cuda.is_available():
                 raise RuntimeError("ROCm GPU is unavailable in WSL")
             index = next((i for i in range(torch.cuda.device_count())
@@ -61,13 +134,15 @@ def main():
             info = {"amd_gpu": torch.cuda.get_device_name(index), "torch_version": torch.__version__,
                     "rocm_version": torch.version.hip, "gpu_matrix_test": passed}
             if not args.probe:
-                prepare_model_cache(args.cache, args.model, lambda message: send({"status": message}))
                 send({"status": f"Loading cached GPU model '{args.model}' into Radeon memory."})
                 from SpeakToBridge.amd_whisper import AmdWhisperModel
-                model = AmdWhisperModel(args.model, args.cache, index)
+                model = AmdWhisperModel(args.model, args.cache, index,
+                                        status_callback=lambda message: send({"status": message}))
         if args.probe:
             send(info)
             return 0
+        torch.cuda.synchronize(index)
+        del matrix
         send(dict(info, ready=True))
         for line in sys.stdin:
             try:
@@ -75,6 +150,7 @@ def main():
                 with redirect_stdout(sys.stderr):
                     audio = np.frombuffer(base64.b64decode(request["audio"], validate=True), dtype="<f4")
                     text = model.transcribe(audio, request["language"], request["initial_prompt"], {"vad_filter": False})
+                torch.cuda.synchronize(index)
                 send({"text": text})
             except Exception:
                 send({"error": traceback.format_exc()})

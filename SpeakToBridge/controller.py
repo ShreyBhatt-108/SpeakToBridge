@@ -23,7 +23,7 @@ LOGGER = logging.getLogger(__name__)
 DICTATION_BEGIN_SOUND = Path(__file__).resolve().parent / "dictation_begin.wav"
 DICTATION_END_SOUND = Path(__file__).resolve().parent / "reverse_dictation_end.mp3"
 PROCESSING_SOUND = Path(__file__).resolve().parent / "status_processing.mp3"
-SUCCESS_SOUND = Path(__file__).resolve().parent / "status_success.mp3"
+SUCCESS_SOUND = Path(__file__).resolve().parent / "status_success.wav"
 FAILURE_SOUND = Path(__file__).resolve().parent / "status_failure.mp3"
 SMART_DICTATION_PROMPT = (
     "Produce clean written dictation. Remove filler words (um, uh, er, ah), false starts, and stutters. "
@@ -191,6 +191,7 @@ class DictationController(QObject):
         if not self._config.sound_effects_enabled:
             return
         if wav:
+            self._sound_feedback.stop()
             winsound.PlaySound(str(sound_path), winsound.SND_FILENAME | winsound.SND_ASYNC)
         else:
             self._sound_feedback.play(sound_path)
@@ -284,6 +285,7 @@ class DictationController(QObject):
             self._recorder.stop()
             self._audio_ducker.restore()
         self._sound_feedback.close()
+        self._engine.close()
 
     def _on_recording_timeout(self) -> None:
         if self._recorder.is_recording:
@@ -318,7 +320,7 @@ class DictationController(QObject):
             if not inserted:
                 self.error_occurred.emit(msg)
             else:
-                self._play_feedback(SUCCESS_SOUND)
+                self._play_feedback(SUCCESS_SOUND, wav=True)
         except Exception as exc:  # pragma: no cover
             LOGGER.exception("Transcription flow failed")
             self.error_occurred.emit(f"Transcription failed ({exc}).")
@@ -357,7 +359,7 @@ class DictationController(QObject):
             self.status_changed.emit("Preparing selected model...")
             self._engine.warm_model()
             self.status_changed.emit(f"Model ready. Using {self.runtime_description}.")
-            self._play_feedback(SUCCESS_SOUND)
+            self._play_feedback(SUCCESS_SOUND, wav=True)
             self.model_preload_finished.emit(requested_model, True, "")
         except Exception as exc:  # pragma: no cover
             LOGGER.exception("Model preload failed")

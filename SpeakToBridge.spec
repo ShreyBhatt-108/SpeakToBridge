@@ -1,7 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 from PyInstaller.utils.hooks import collect_data_files
 
-datas = [('SpeakToBridge\\dictation_begin.wav', 'SpeakToBridge'), ('SpeakToBridge\\reverse_dictation_end.mp3', 'SpeakToBridge'), ('SpeakToBridge\\status_processing.mp3', 'SpeakToBridge'), ('SpeakToBridge\\status_success.mp3', 'SpeakToBridge'), ('SpeakToBridge\\status_failure.mp3', 'SpeakToBridge')]
+datas = [('SpeakToBridge\\dictation_begin.wav', 'SpeakToBridge'), ('SpeakToBridge\\reverse_dictation_end.mp3', 'SpeakToBridge'), ('SpeakToBridge\\status_processing.mp3', 'SpeakToBridge'), ('SpeakToBridge\\status_success.wav', 'SpeakToBridge'), ('SpeakToBridge\\status_failure.mp3', 'SpeakToBridge')]
 datas += collect_data_files('faster_whisper')
 
 
