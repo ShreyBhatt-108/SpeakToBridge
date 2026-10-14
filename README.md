@@ -138,15 +138,24 @@ recordings. The lightweight supervisor remains available; quitting the app
 closes both processes. These controls apply to SpeakToBridge's worker, not other
 AI experiments using the shared environment.
 
-Model preparation reports cache checks, PyTorch startup, weight loading and GPU
-transfer separately. On Linux ROCm, parameters are packed into one GPU transfer
-instead of hundreds of separate allocations and copies. This uses temporary
-extra RAM during loading and creates no additional model files. On the tested
-8060S, Large v3 preparation improved from about 51 seconds to 35 seconds, while
-an already-loaded transcription after an idle pause took about 2 seconds.
-Cache enumeration itself took about 0.07 seconds. Cold startup still needs to
-start PyTorch and load the 3.09 GB model; these figures are measurements on one
-laptop, not guaranteed timings.
+Opening the GUI imports neither CPU nor GPU inference libraries and does not
+start WSL. CPU inference is loaded only for CPU mode or fallback. Windows GPU
+mode uses standalone, single-threaded ONNX silence filtering, without importing
+CTranslate2 or PyTorch into the GUI. On the tested laptop, launch memory fell
+from about 1.7 GB to 106 MB; packaged GUI imports took 0.15 seconds.
+
+Preparation starts in the background when the first recording begins, sharing
+one model load with transcription. GPU kernel warm-up happens before reporting
+Model Ready. Subsequent recordings reuse that loaded model. Runtime Status
+reports actual preparation stages, rather than repeating a ready check every
+time. With Linux model storage, Large v3 preparation including GPU warm-up took
+about 20 seconds. A repeated 6.465-second English test clip took about 1.2 seconds
+to transcribe. These are individual measurements, not guarantees for every
+recording or a reboot. Large v3 still needs a first preparation each app session.
+
+On Linux ROCm, parameters are packed into one GPU transfer instead of hundreds
+of separate allocations and copies. This uses temporary extra RAM and creates
+no additional model files.
 
 Feedback sounds use the latest event: a completion cue interrupts obsolete
 processing feedback immediately instead of waiting in a queue. The completion
@@ -154,10 +163,23 @@ cue is a 450 ms WAV excerpt of the existing tone, played asynchronously after
 successful text insertion; its long decay and MP3 initialization are removed. The sound preference is
 preserved. The batching approach follows [AMD HIP performance guidance](https://rocm.docs.amd.com/projects/HIP/en/docs-6.2.2/how-to/performance_guidelines.html).
 
-Windows files are accessible under `/mnt/c`. GPU Whisper weights are regular
-files in the existing app cache's `models/openai-whisper-<size>` directories, so a
-later native AMD setup can reuse them. CPU CTranslate2 weights have a different
-format. Settings and Word Bank remain in Windows application data.
+The recommended WSL GPU cache is `/opt/amd-ai-models`, containing regular
+`openai-whisper-<size>` directories and any existing Hugging Face snapshot caches.
+The worker recognizes complete legacy snapshots directly, without downloading
+another copy or querying the network. Set `gpu_cache` in `wsl-runtime.json` to use
+Linux storage; omitting it retains the legacy Windows cache location. Linux
+storage avoids the mounted-Windows filesystem translation overhead while still
+using the same physical SSD. WSL stores its native ext4 filesystem inside a
+virtual disk. See [Microsoft's filesystem guidance](https://learn.microsoft.com/en-us/windows/wsl/filesystems).
+
+On the tested laptop, the existing GPU caches were copied, hash-verified, tested
+and then removed from their old Windows location, leaving one shared copy for
+SpeakToBridge and Linux AI experiments. Settings, Word Bank and CTranslate2 CPU
+weights remain in Windows application data. Windows keeps only a small GPU
+cache manifest at `models/.wsl-models.json`, so listing models does not start
+Ubuntu or read model weights. The app can delete listed Linux caches through the
+configured worker. Native Windows inference needs a Windows-readable model
+location; the same weights can be relocated again when switching runtimes.
 
 For installation and opt-in configuration, see [AMD_SETUP.md](AMD_SETUP.md).
 Keep the configured worker checkout path available. WSL configurations are per
@@ -180,7 +202,7 @@ python -c "import torch; print(torch.cuda.get_device_name(0))"
 PyTorch uses its `torch.cuda` API for AMD HIP devices as well. Windows Python and
 Linux Python have separate packages; activate this Linux environment for ROCm
 experiments. To reuse downloaded Whisper weights with Transformers, load their
-local `/mnt/c/.../SpeakToBridge/models/openai-whisper-small` directory directly.
+local `/opt/amd-ai-models/openai-whisper-small` directory directly.
 Later native Windows ROCm is possible with a compatible supported runtime and
 Windows trust requirements resolved; copying Linux packages into Windows will
 not provide a native installation.

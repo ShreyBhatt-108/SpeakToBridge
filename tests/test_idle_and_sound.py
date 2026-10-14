@@ -95,3 +95,33 @@ class IdleWorkerTests(unittest.TestCase):
         self.assertEqual([call.args[1] for call in kill.call_args_list], [19,18,18])
         send.assert_called_with({"error":"GPU failed"})
         child.stdin.close.assert_called_once()
+
+
+class PreparationTests(unittest.TestCase):
+    def test_recording_preparation_and_dictation_share_one_model_load(self):
+        from SpeakToBridge.whisper_engine import WhisperEngine
+        entered = threading.Event()
+        release = threading.Event()
+        model = Mock()
+        def load(*args, **kwargs):
+            entered.set()
+            self.assertTrue(release.wait(2))
+            return model
+        with patch("SpeakToBridge.whisper_engine._create_cpu_model", side_effect=load) as loader, \
+             patch("SpeakToBridge.whisper_engine.rocm_import_attempted", return_value=False), \
+             patch.dict(__import__('sys').modules, {"torch":None}):
+            engine = WhisperEngine("tiny", "en", "cpu", "off", Path("unused"))
+            engine.prepare_async()
+            self.assertTrue(entered.wait(1))
+            engine.prepare_async()
+            foreground = threading.Thread(target=engine.warm_model)
+            foreground.start()
+            release.set()
+            foreground.join(2)
+            engine._preparation_thread.join(2)
+            self.assertFalse(foreground.is_alive())
+            self.assertIs(engine._model, model)
+            loader.assert_called_once()
+            engine.close()
+            with self.assertRaises(RuntimeError):
+                engine.warm_model()

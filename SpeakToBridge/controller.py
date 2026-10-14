@@ -223,6 +223,7 @@ class DictationController(QObject):
             self._recorder.start()
             self._recording_timer.start(self._config.max_recording_seconds * 1000)
             self._play_feedback(DICTATION_BEGIN_SOUND, wav=True)
+            self._engine.prepare_async()
             self.recording_changed.emit(True)
             self.status_changed.emit(
                 f"Recording. Press {self._activation_hotkey_display} again to stop and transcribe. "
@@ -293,7 +294,7 @@ class DictationController(QObject):
 
     def _transcribe_and_insert(self, audio) -> None:  # noqa: ANN001
         try:
-            self.status_changed.emit("Model ready check in progress...")
+            self.status_changed.emit("Transcribing recorded audio...")
             initial_prompt_parts = [SMART_DICTATION_PROMPT]
             glossary_prompt = self._word_bank.glossary_prompt()
             if glossary_prompt:

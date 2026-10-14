@@ -68,3 +68,16 @@ assert json.loads(output.read_text())['optional_runtime_probe_skipped'] == 'CPU-
                 env=environment, capture_output=True, text=True, timeout=30,
             )
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_gui_and_gpu_vad_do_not_import_cpu_or_gpu_inference_stacks(self):
+        code = """
+import sys
+import numpy as np
+import SpeakToBridge.app
+from SpeakToBridge.vad import get_speech_timestamps
+assert get_speech_timestamps(np.zeros(16000, dtype=np.float32)) == []
+for name in ('torch','ctranslate2','faster_whisper','transformers'):
+    assert name not in sys.modules, name + ' loaded into Windows GUI'
+"""
+        result = subprocess.run([sys.executable, '-c', code], capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

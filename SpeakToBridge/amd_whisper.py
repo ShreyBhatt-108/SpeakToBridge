@@ -83,8 +83,9 @@ class AmdWhisperModel:
         repository = f"openai/whisper-{model_name}"
         # A local_dir download contains regular files readable by both Windows
         # and WSL, unlike Linux-only symlinks written on a mounted NTFS drive.
-        shared_model = cache_dir / f"openai-whisper-{model_name}"
-        if (shared_model / ".speak_to_bridge_ready").is_file():
+        from .model_storage import find_cached_amd_model
+        shared_model = find_cached_amd_model(cache_dir, model_name)
+        if shared_model is not None:
             repository = str(shared_model)
         self._processor = WhisperProcessor.from_pretrained(repository, cache_dir=str(cache_dir))
         if status_callback:
@@ -123,7 +124,7 @@ class AmdWhisperModel:
 
     def transcribe(self, audio: np.ndarray, language: str, initial_prompt: str, vad: dict) -> str:
         if vad.get("vad_filter"):
-            from faster_whisper.vad import get_speech_timestamps
+            from .vad import get_speech_timestamps
 
             spans = get_speech_timestamps(audio, **vad.get("vad_parameters", {}))
             if not spans:

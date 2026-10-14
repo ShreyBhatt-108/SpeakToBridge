@@ -12,7 +12,13 @@ if __name__ == "__main__":
     from SpeakToBridge.logging_utils import configure_logging
     configure_logging()
     try:
+        import time
+        import_started = time.perf_counter()
         from SpeakToBridge.app import run
+        import logging
+        logging.getLogger(__name__).info(
+            "GUI imports completed in %.3f seconds; torch=%s, ctranslate2=%s",
+            time.perf_counter() - import_started, "torch" in sys.modules, "ctranslate2" in sys.modules)
         raise SystemExit(run())
     except Exception:
         import logging

@@ -216,7 +216,8 @@ For an updated installed app built from this source, create
   "enabled": true,
   "distribution": "Ubuntu-24.04",
   "python": "/opt/amd-ai/bin/python",
-  "worker": "C:\\path\\to\\SpeakToBridge\\scripts\\wsl_worker.py"
+  "worker": "C:\\path\\to\\SpeakToBridge\\scripts\\wsl_worker.py",
+  "gpu_cache": "/opt/amd-ai-models"
 }
 ```
 
@@ -240,18 +241,31 @@ ROCm GPU detection and a passing FP16 matrix test. Windows performs VAD first.
 Worker startup or inference failure retries on CPU without probing Windows ROCm
 DLLs. Native ROCm's isolated CPU fallback remains intact for OpenMP conflicts.
 
-GPU models are regular files under the existing app cache's
-`models/openai-whisper-<size>` directories, downloaded with Hub `local_dir`.
-The native AMD adapter recognizes completed downloads there, allowing a later
-native setup to reuse them. For experiments, load those local directories with
-Transformers to reuse these weights. CTranslate2 CPU weights use a different
-format and remain separate; settings, Word Bank and existing caches are preserved.
+For WSL, use the Linux cache configured by `gpu_cache`, such as
+`/opt/amd-ai-models/openai-whisper-large-v3`. GPU weights are regular files
+usable directly by Transformers experiments. Linux storage avoids repeated
+filesystem translation through `/mnt/c` while using the same SSD. For the
+filesystem rationale, see [Microsoft's WSL filesystem guidance](https://learn.microsoft.com/en-us/windows/wsl/filesystems).
+Ensure the directory is writable by the distro's default user. This laptop's
+existing Tiny, Small, Medium and Large v3 GPU caches were hash-verified after copying
+and moved into this shared Linux cache; no duplicate GPU copies remain.
+
+Omitting `gpu_cache` preserves the legacy Windows cache behavior. Native Windows
+ROCm still uses Windows-readable weights; relocate the same files when changing
+runtimes. CTranslate2 CPU weights, settings and Word Bank remain in Windows.
+The Windows model panel reads a small `.wsl-models.json` manifest rather than
+starting Ubuntu at launch. New downloads update this manifest automatically.
+
+The GUI imports no inference runtimes at startup. Model preparation begins
+during the first recording and includes GPU kernel warm-up; subsequent
+recordings reuse the paused worker. Standalone ONNX VAD preserves silence and
+pause settings without loading Windows CTranslate2 or ROCm in GPU mode.
 
 Target hardware checks after restart: Radeon 8060S detection, FP16 matrix
-execution and packaged Tiny/Small/Large v3 speech transcription passed. The runtime reported
+execution and packaged Tiny/Small/Medium/Large v3 speech transcription passed. The runtime reported
 18,141,939,712 bytes (16.90 GiB) of GPU memory with the firmware's 2 GB allocation.
 Explicit CPU transcription and unavailable-WSL-worker CPU fallback passed.
-32 regression tests passed, including persistent backend reporting. See the local troubleshooting report for the latest
+42 regression tests passed, including persistent backend reporting, lazy startup, offline cache summaries and shared preparation. See the local troubleshooting report for the latest
 Small-model and GUI results. No GPU-enabled release has been published.
 
 AMD installation references:

@@ -31,7 +31,7 @@ class WslRuntimeTests(unittest.TestCase):
         with patch("SpeakToBridge.whisper_engine.wsl_enabled", return_value=True), \
              patch("SpeakToBridge.whisper_engine.amd_device") as native, \
              patch("SpeakToBridge.whisper_engine.WslWhisperModel", side_effect=RuntimeError("WSL unavailable")), \
-             patch("SpeakToBridge.whisper_engine.WhisperModel") as cpu, \
+             patch("SpeakToBridge.whisper_engine._create_cpu_model") as cpu, \
              patch("SpeakToBridge.whisper_engine.rocm_import_attempted", return_value=False):
             engine = WhisperEngine("tiny", "en", "amd_gpu", "off", Path("cache"))
             engine.warm_model()
@@ -84,6 +84,29 @@ for line in sys.stdin:
                 self.assertEqual(worker.transcribe(np.ones(4, dtype=np.float32), "en", "Word Bank example", {"vad_filter": False}), "verified pipe")
                 worker.close()
                 self.assertEqual(worker._process.returncode, 0)
+
+
+class LinuxCacheTests(unittest.TestCase):
+    def test_linux_cache_manifest_lists_models_without_starting_wsl(self):
+        from SpeakToBridge.model_storage import record_wsl_cached_model, list_cached_models, delete_cached_model
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            record_wsl_cached_model(root, {"model_name":"large-v3", "size_bytes":3091756954, "ready":True})
+            with patch("subprocess.run", side_effect=AssertionError("Cache listing launched WSL")):
+                items = list_cached_models(root)
+            self.assertEqual(len(items), 1)
+            self.assertEqual(items[0].folder_name, "wsl--openai-whisper-large-v3")
+            self.assertTrue(items[0].ready)
+            self.assertEqual(items[0].backend, "AMD ROCm (WSL)")
+            with self.assertRaises(ValueError):
+                delete_cached_model(root, "wsl--openai-whisper-../outside")
+
+    def test_linux_cache_path_is_passed_without_windows_mount_conversion(self):
+        from SpeakToBridge.wsl_whisper import worker_command
+        with patch("SpeakToBridge.wsl_whisper._settings", return_value={"distribution":"Ubuntu", "python":"/opt/amd-ai/bin/python",
+                   "worker":r"C:\project\scripts\wsl_worker.py", "gpu_cache":"/opt/amd-ai-models"}):
+            command = worker_command(Path(r"C:\models"), "large-v3")
+        self.assertEqual(command[command.index("--cache")+1], "/opt/amd-ai-models")
 
 
 if __name__ == "__main__":

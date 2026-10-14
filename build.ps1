@@ -57,6 +57,7 @@ if ($AmdRuntime) {
 if ($LASTEXITCODE -ne 0) { throw "Dependency verification failed." }
 & $pythonCmd -m PyInstaller --noconfirm --windowed --onedir --noupx --name SpeakToBridge --specpath ".\build" @backendArgs `
     --collect-data faster_whisper `
+    --add-data "$PSScriptRoot\third_party\faster-whisper-LICENSE;licenses" `
     --add-data "$PSScriptRoot\SpeakToBridge\dictation_begin.wav;SpeakToBridge" `
     --add-data "$PSScriptRoot\SpeakToBridge\reverse_dictation_end.mp3;SpeakToBridge" `
     --add-data "$PSScriptRoot\SpeakToBridge\status_processing.mp3;SpeakToBridge" `

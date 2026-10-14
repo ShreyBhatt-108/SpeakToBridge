@@ -16,3 +16,9 @@ Mixkit does not require attribution for these sound effects, but the sources are
 `SpeakToBridge/status_success.wav` is a 450 ms PCM excerpt of
 `status_success.mp3`, with a short fade at the end, used for immediate
 completion feedback. It retains the source asset attribution above.
+
+`SpeakToBridge/vad.py` adapts the VAD timestamp and Silero inference code from
+faster-whisper 1.2.1 (SYSTRAN, MIT license). It reuses the already-bundled Silero
+VAD v6 ONNX asset. The code's original license is retained in its header and in
+`third_party/faster-whisper-LICENSE`, included in packaged builds under `licenses`.
+Only asset lookup, float32 normalization and passive ONNX waiting are changed.

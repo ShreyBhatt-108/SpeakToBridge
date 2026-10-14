@@ -29,7 +29,7 @@ class BackendIndicatorTests(unittest.TestCase):
         with patch("SpeakToBridge.whisper_engine.wsl_enabled", return_value=False), \
              patch("SpeakToBridge.whisper_engine.amd_device", return_value=(0, "8060S")), \
              patch("SpeakToBridge.whisper_engine.AmdWhisperModel"), \
-             patch("SpeakToBridge.whisper_engine.WhisperModel"), \
+             patch("SpeakToBridge.whisper_engine._create_cpu_model"), \
              patch("SpeakToBridge.whisper_engine.rocm_import_attempted", return_value=False):
             def transcribe(audio, prompt):
                 engine.warm_model()
@@ -103,3 +103,22 @@ class OfflineWslCacheTests(unittest.TestCase):
             with patch("huggingface_hub.snapshot_download", side_effect=download):
                 model = prepare_model_cache(cache,"large-v3")
                 self.assertTrue((model/".speak_to_bridge_ready").is_file())
+
+
+class LegacyGpuCacheTests(unittest.TestCase):
+    def test_complete_legacy_snapshot_is_used_without_network_or_conversion(self):
+        import tempfile
+        from scripts.wsl_worker import prepare_model_cache
+        with tempfile.TemporaryDirectory() as directory:
+            cache = Path(directory)
+            root = cache / "models--openai--whisper-medium"
+            snapshot = root / "snapshots" / ("a" * 40)
+            snapshot.mkdir(parents=True)
+            (root / "refs").mkdir()
+            (root / "refs" / "main").write_text("a" * 40)
+            for name in ("config.json", "generation_config.json", "preprocessor_config.json",
+                         "tokenizer_config.json", "tokenizer.json", "model.safetensors"):
+                (snapshot / name).write_text("cached")
+            with patch("huggingface_hub.snapshot_download", side_effect=AssertionError("Redundant download")):
+                self.assertEqual(prepare_model_cache(cache, "medium"), snapshot)
+            self.assertFalse((cache / "openai-whisper-medium").exists())

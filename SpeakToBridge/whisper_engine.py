@@ -7,20 +7,25 @@ import threading
 from pathlib import Path
 
 import numpy as np
-# Hub reads this flag at import time, so set it before importing faster-whisper.
 os.environ.setdefault("HF_HUB_DISABLE_XET", "1")
+# Heavy CPU inference libraries are imported only when CPU transcription needs
+# them, never while opening the GUI or running the WSL GPU backend.
+_cpu_import_lock = threading.Lock()
 
-# CTranslate2 eagerly imports optional conversion utilities, which import torch.
-# Inference does not need those utilities. Keep ROCm out of startup and CPU mode;
-# amd_device() can still import the real torch package when GPU mode is selected.
-_torch_was_absent = "torch" not in sys.modules
-if _torch_was_absent:
-    sys.modules["torch"] = None
-try:
-    from faster_whisper import WhisperModel
-finally:
-    if _torch_was_absent:
-        sys.modules.pop("torch", None)
+
+def _create_cpu_model(*args, **kwargs):
+    with _cpu_import_lock:
+        os.environ.setdefault("HF_HUB_DISABLE_XET", "1")
+        torch_absent = "torch" not in sys.modules
+        if torch_absent:
+            sys.modules["torch"] = None
+        try:
+            from faster_whisper import WhisperModel
+        finally:
+            if torch_absent:
+                sys.modules.pop("torch", None)
+    return WhisperModel(*args, **kwargs)
+
 
 from .wsl_whisper import WslWhisperModel, wsl_enabled
 from .model_storage import is_model_cache_ready
@@ -32,6 +37,10 @@ LOGGER = logging.getLogger(__name__)
 
 
 def _has_cuda_device() -> bool:
+    # After a ROCm import attempt, even detection must not introduce the other
+    # OpenMP runtime into this process. CPU inference uses its isolated worker.
+    if rocm_import_attempted():
+        return False
     try:
         import ctranslate2  # pylint: disable=import-outside-toplevel
 
@@ -58,7 +67,7 @@ class WhisperEngine:
         self._model_cache_dir = model_cache_dir
         self._runtime_callback = runtime_callback
         self._status_callback = status_callback
-        self._model: WhisperModel | AmdWhisperModel | None = None
+        self._model = None
         self._gpu_failed = False
         self._amd_device_index = 0
         self._runtime_description = "Not loaded yet"
@@ -67,6 +76,8 @@ class WhisperEngine:
         self._model_lock = threading.Lock()
         self._model_cv = threading.Condition(self._model_lock)
         self._loading_in_progress = False
+        self._preparation_thread = None
+        self._closed = False
         self._known_cached_models: set[str] = set()
 
     def _release_model(self) -> None:
@@ -77,7 +88,9 @@ class WhisperEngine:
 
     def close(self) -> None:
         with self._model_cv:
+            self._closed = True
             self._release_model()
+            self._model_cv.notify_all()
 
     def update_model(self, model_name: str) -> None:
         if model_name == self._model_name:
@@ -145,6 +158,8 @@ class WhisperEngine:
     def _ensure_model(self) -> None:
         while True:
             with self._model_cv:
+                if self._closed:
+                    raise RuntimeError("Transcription engine is shutting down")
                 if self._model is not None:
                     return
                 if self._loading_in_progress:
@@ -182,7 +197,7 @@ class WhisperEngine:
                         from .cpu_worker import CpuWhisperWorker
                         loaded_model = CpuWhisperWorker(model_name, self._model_cache_dir)
                     else:
-                        loaded_model = WhisperModel(
+                        loaded_model = _create_cpu_model(
                             model_name, device=device, compute_type=compute_type,
                             download_root=str(self._model_cache_dir),
                         )
@@ -201,6 +216,10 @@ class WhisperEngine:
             with self._model_cv:
                 self._loading_in_progress = False
                 self._model_cv.notify_all()
+                if self._closed:
+                    if getattr(loaded_model, "_wsl_worker", False) is True:
+                        loaded_model.close()
+                    raise RuntimeError("Transcription engine is shutting down")
                 # If the requested model changed while loading, discard and load current target.
                 if self._model_name != model_name or self._runtime_mode != runtime_mode:
                     if getattr(loaded_model, "_wsl_worker", False) is True:
@@ -217,6 +236,21 @@ class WhisperEngine:
                 )
                 self._emit_status(f"Model ready. Using {self._runtime_description}.")
                 return
+
+    def prepare_async(self) -> None:
+        with self._model_cv:
+            if self._closed or self._model is not None or self._loading_in_progress:
+                return
+            if self._preparation_thread is not None and self._preparation_thread.is_alive():
+                return
+            def prepare():
+                try:
+                    self.warm_model()
+                except Exception:
+                    LOGGER.exception("Background model preparation failed; dictation will report the error")
+            self._preparation_thread = threading.Thread(target=prepare, daemon=True,
+                                                        name="speak-to-bridge-model-preparation")
+            self._preparation_thread.start()
 
     def warm_model(self) -> None:
         self._ensure_model()

@@ -8,6 +8,9 @@ import json
 import os
 import signal
 import subprocess
+import shutil
+import queue
+import threading
 from pathlib import Path
 import sys
 import traceback
@@ -31,11 +34,12 @@ def send(value):
 
 
 def prepare_model_cache(cache, model_name, status_callback=None):
-    from SpeakToBridge.model_storage import is_model_cache_ready
+    from SpeakToBridge.model_storage import is_model_cache_ready, find_cached_amd_model
     model_dir = cache / f"openai-whisper-{model_name}"
     marker = model_dir / ".speak_to_bridge_ready"
-    if marker.is_file() and is_model_cache_ready(model_dir):
-        return model_dir
+    existing = find_cached_amd_model(cache, model_name)
+    if existing is not None:
+        return existing
     if status_callback:
         size_hint = " (approximately 3.1 GB of weights)" if model_name == "large-v3" else ""
         status_callback(f"Downloading missing GPU model files for '{model_name}'{size_hint}.")
@@ -60,10 +64,27 @@ def supervise_gpu_worker(args):
          "--cache", str(args.cache), "--model", args.model],
         stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, encoding="utf-8",
     )
+    requests = queue.Queue()
+    ready = threading.Event()
+    def read_requests():
+        saw_request = False
+        for request in sys.stdin:
+            saw_request = True
+            requests.put(request)
+        requests.put(None)
+        # The GUI can quit while weights are still loading. Do not leave an
+        # unneeded GPU child running until initialization finishes.
+        if not saw_request and not ready.is_set() and child.poll() is None:
+            try:
+                child.terminate()
+            except ProcessLookupError:
+                pass
+    threading.Thread(target=read_requests, daemon=True).start()
     try:
         for line in child.stdout:
             reply = json.loads(line)
             if reply.get("ready"):
+                ready.set()
                 os.kill(child.pid, signal.SIGSTOP)
                 send(reply)
                 break
@@ -72,7 +93,7 @@ def supervise_gpu_worker(args):
                 return 1
         else:
             raise RuntimeError("GPU child exited before becoming ready")
-        for request in sys.stdin:
+        for request in iter(requests.get, None):
             os.kill(child.pid, signal.SIGCONT)
             child.stdin.write(request)
             child.stdin.flush()
@@ -106,15 +127,26 @@ def main():
     parser.add_argument("--cache", required=True, type=Path)
     parser.add_argument("--model", default="tiny")
     parser.add_argument("--probe", action="store_true")
+    parser.add_argument("--delete-model", choices=["tiny", "base", "small", "medium", "large-v3"])
     parser.add_argument("--gpu-child", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args()
     try:
+        if args.delete_model:
+            base = args.cache.resolve()
+            for prefix in ("openai-whisper-", "models--openai--whisper-"):
+                target = (base / f"{prefix}{args.delete_model}").resolve()
+                if target.parent != base:
+                    raise ValueError("Model path is outside the configured GPU cache")
+                if target.exists():
+                    shutil.rmtree(target)
+            send({"deleted": args.delete_model})
+            return 0
         if not args.probe and not args.gpu_child:
             return supervise_gpu_worker(args)
         if not args.probe:
             send({"status": "Checking local GPU model files."})
             with redirect_stdout(sys.stderr):
-                prepare_model_cache(args.cache, args.model, lambda message: send({"status": message}))
+                local_model = prepare_model_cache(args.cache, args.model, lambda message: send({"status": message}))
             send({"status": "Starting WSL PyTorch runtime; model files are cached."})
         with redirect_stdout(sys.stderr):
             import numpy as np
@@ -141,9 +173,16 @@ def main():
         if args.probe:
             send(info)
             return 0
+        send({"status": "Warming Radeon inference kernels; preparing the first transcription."})
+        with redirect_stdout(sys.stderr):
+            model.transcribe(np.zeros(16000, dtype=np.float32), "en", "", {"vad_filter": False})
         torch.cuda.synchronize(index)
         del matrix
-        send(dict(info, ready=True))
+        shared = args.cache / f"openai-whisper-{args.model}"
+        model_folder = shared if local_model.is_relative_to(shared) else args.cache / f"models--openai--whisper-{args.model}"
+        cache_info = {"model_name": args.model, "size_bytes": sum(
+            f.stat().st_size for f in model_folder.rglob("*") if f.is_file()), "ready": True}
+        send(dict(info, ready=True, model_cache=cache_info))
         for line in sys.stdin:
             try:
                 request = json.loads(line)

@@ -25,6 +25,18 @@ class RuntimeTests(unittest.TestCase):
     def engine(self, mode="cpu_auto_gpu"):
         return WhisperEngine("tiny", "en", mode, "off", Path("unused-test-cache"))
 
+    def test_rocm_attempt_skips_ctranslate2_cuda_probe(self):
+        from SpeakToBridge.whisper_engine import _has_cuda_device
+        import builtins
+        original = builtins.__import__
+        def guarded(name, *args, **kwargs):
+            if name == "ctranslate2":
+                raise AssertionError("ROCm fallback introduced another OpenMP runtime")
+            return original(name, *args, **kwargs)
+        with patch("SpeakToBridge.whisper_engine.rocm_import_attempted", return_value=True), \
+             patch("builtins.__import__", side_effect=guarded):
+            self.assertFalse(_has_cuda_device())
+
     def test_cpu_mode_does_not_probe_gpu(self):
         with patch("SpeakToBridge.whisper_engine.amd_device") as detect:
             self.assertEqual(self.engine("cpu")._resolve_runtime(), ("cpu", "int8"))
@@ -45,7 +57,7 @@ class RuntimeTests(unittest.TestCase):
         model = Mock(spec=AmdWhisperModel)
         with patch("SpeakToBridge.whisper_engine.amd_device", return_value=(0, "AMD Radeon 8060S")), \
              patch("SpeakToBridge.whisper_engine.AmdWhisperModel", return_value=model) as amd, \
-             patch("SpeakToBridge.whisper_engine.WhisperModel") as cpu:
+             patch("SpeakToBridge.whisper_engine._create_cpu_model") as cpu:
             engine = self.engine()
             engine.warm_model()
             amd.assert_called_once_with("tiny", Path("unused-test-cache"), 0)
@@ -56,7 +68,7 @@ class RuntimeTests(unittest.TestCase):
         with patch.dict(sys.modules, {"torch": None}), \
              patch("SpeakToBridge.whisper_engine.amd_device", return_value=(0, "8060S")), \
              patch("SpeakToBridge.whisper_engine.AmdWhisperModel", side_effect=RuntimeError("driver error")), \
-             patch("SpeakToBridge.whisper_engine.WhisperModel") as cpu:
+             patch("SpeakToBridge.whisper_engine._create_cpu_model") as cpu:
             engine = self.engine()
             engine.warm_model()
             self.assertEqual(engine.runtime_description, "CPU (INT8)")
@@ -66,7 +78,7 @@ class RuntimeTests(unittest.TestCase):
         torch = SimpleNamespace(version=SimpleNamespace(hip="7.2"))
         with patch.dict(sys.modules, {"torch": torch}), \
              patch("SpeakToBridge.cpu_worker.CpuWhisperWorker") as worker, \
-             patch("SpeakToBridge.whisper_engine.WhisperModel") as cpu:
+             patch("SpeakToBridge.whisper_engine._create_cpu_model") as cpu:
             engine = self.engine("cpu")
             engine.warm_model()
             worker.assert_called_once_with("tiny", Path("unused-test-cache"))
@@ -76,7 +88,7 @@ class RuntimeTests(unittest.TestCase):
     def test_failed_rocm_import_keeps_cpu_in_isolated_worker(self):
         with patch("SpeakToBridge.whisper_engine.rocm_import_attempted", return_value=True), \
              patch("SpeakToBridge.cpu_worker.CpuWhisperWorker") as worker, \
-             patch("SpeakToBridge.whisper_engine.WhisperModel") as cpu:
+             patch("SpeakToBridge.whisper_engine._create_cpu_model") as cpu:
             engine = self.engine("cpu")
             engine.warm_model()
             worker.assert_called_once_with("tiny", Path("unused-test-cache"))
@@ -133,7 +145,7 @@ class RuntimeTests(unittest.TestCase):
     def test_silence_does_not_generate_hallucinated_text(self):
         model = AmdWhisperModel.__new__(AmdWhisperModel)
         model._processor = Mock()
-        with patch("faster_whisper.vad.get_speech_timestamps", return_value=[]):
+        with patch("SpeakToBridge.vad.get_speech_timestamps", return_value=[]):
             self.assertEqual(model.transcribe(np.zeros(16000), "en", "", {"vad_filter": True}), "")
         model._processor.assert_not_called()
 

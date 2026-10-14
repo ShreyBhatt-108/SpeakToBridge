@@ -99,6 +99,8 @@ class SpeakToBridgeRuntime(QObject):
         self._app = app
         self._config_store = ConfigStore(get_config_path())
         self._config: AppConfig = self._config_store.load()
+        from .wsl_whisper import wsl_enabled
+        LOGGER.info("Application data directory: %s; WSL configured: %s", get_config_path().parent, wsl_enabled())
         self._stats_store = StatsStore(get_stats_path())
         self._lifetime_stats: LifetimeStats = self._stats_store.load()
         self._word_bank = WordBank(get_word_bank_path())
@@ -150,7 +152,7 @@ class SpeakToBridgeRuntime(QObject):
         )
         self._window.set_dictation_enabled(True)
         self._controller.set_enabled(True)
-        self._window.set_model_status("Ready")
+        self._window.set_model_status("Not loaded yet")
         self._window.set_active_model(self._config.model_name)
         self._set_status(f"Ready. Press {self._hotkey.activation_hotkey_display} to start or stop dictation.")
         self._sync_tray_state()
@@ -494,6 +496,12 @@ class SpeakToBridgeRuntime(QObject):
 
     def _extract_model_status(self, message: str) -> str | None:
         lower = message.lower()
+        if "starting amd gpu worker" in lower or "starting wsl pytorch" in lower:
+            return "Starting GPU runtime..."
+        if "warming radeon" in lower:
+            return "Warming GPU kernels..."
+        if "packing model weights" in lower or "moving model weights" in lower or "reading cached model" in lower:
+            return "Preparing cached weights..."
         if "downloading model" in lower:
             return "Downloading model..."
         if "loading model" in lower:
@@ -606,14 +614,20 @@ class SpeakToBridgeRuntime(QObject):
         worker.start()
 
     def _load_model_cache_entries(self, generation: int) -> None:
-        from .amd_whisper import amd_device
         from .wsl_whisper import wsl_enabled
-        from .model_storage import AMD_MODEL_CACHE_PREFIX, SHARED_AMD_MODEL_CACHE_PREFIX, MODEL_CACHE_PREFIX
+        from .model_storage import AMD_MODEL_CACHE_PREFIX, SHARED_AMD_MODEL_CACHE_PREFIX, MODEL_CACHE_PREFIX, WSL_MODEL_CACHE_PREFIX
 
         rows: list[tuple[str, str, str, bool]] = []
         error = ""
-        use_amd = self._config.runtime_mode != "cpu" and (wsl_enabled() or amd_device() is not None)
-        prefix = (AMD_MODEL_CACHE_PREFIX, SHARED_AMD_MODEL_CACHE_PREFIX) if use_amd else MODEL_CACHE_PREFIX
+        # Cache enumeration is metadata work, not a GPU availability probe.
+        if self._config.runtime_mode == "cpu":
+            prefix = MODEL_CACHE_PREFIX
+        elif wsl_enabled():
+            prefix = (AMD_MODEL_CACHE_PREFIX, SHARED_AMD_MODEL_CACHE_PREFIX, WSL_MODEL_CACHE_PREFIX)
+        elif self._config.runtime_mode == "amd_gpu":
+            prefix = (AMD_MODEL_CACHE_PREFIX, SHARED_AMD_MODEL_CACHE_PREFIX)
+        else:
+            prefix = (MODEL_CACHE_PREFIX, AMD_MODEL_CACHE_PREFIX, SHARED_AMD_MODEL_CACHE_PREFIX)
         try:
             models = list_cached_models(self._model_cache_dir)
             for item in models:

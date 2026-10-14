@@ -2,12 +2,16 @@ from __future__ import annotations
 
 import shutil
 import json
+import os
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
 MODEL_CACHE_PREFIX = "models--Systran--faster-whisper-"
 SHARED_AMD_MODEL_CACHE_PREFIX = "openai-whisper-"
 AMD_MODEL_CACHE_PREFIX = "models--openai--whisper-"
+WSL_MODEL_CACHE_PREFIX = "wsl--openai-whisper-"
+WSL_MANIFEST_NAME = ".wsl-models.json"
 REQUIRED_MODEL_FILES = frozenset({"config.json", "model.bin", "tokenizer.json", "vocabulary.txt"})
 
 
@@ -49,10 +53,32 @@ def list_cached_models(model_cache_dir: Path) -> list[CachedModelInfo]:
                 backend="AMD ROCm" if prefix in (AMD_MODEL_CACHE_PREFIX, SHARED_AMD_MODEL_CACHE_PREFIX) else "CPU/NVIDIA",
             )
         )
+    for item in _read_wsl_manifest(model_cache_dir):
+        try:
+            if item["model_name"] not in ("tiny", "base", "small", "medium", "large-v3"):
+                continue
+            results.append(CachedModelInfo(item["model_name"], WSL_MODEL_CACHE_PREFIX + item["model_name"],
+                                           int(item["size_bytes"]), item.get("ready") is True, "AMD ROCm (WSL)"))
+        except (KeyError, ValueError, TypeError):
+            continue
     return sorted(results, key=lambda item: item.model_name)
 
 
 def delete_cached_model(model_cache_dir: Path, folder_name: str) -> bool:
+    if folder_name.startswith(WSL_MODEL_CACHE_PREFIX):
+        name = folder_name[len(WSL_MODEL_CACHE_PREFIX):]
+        if name not in ("tiny", "base", "small", "medium", "large-v3"):
+            raise ValueError("Unsafe WSL model name")
+        from .wsl_whisper import worker_command
+        import subprocess
+        result = subprocess.run(worker_command(model_cache_dir, None)[:-1] + ["--delete-model", name],
+                                capture_output=True, text=True, encoding="utf-8", timeout=60,
+                                creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
+        if result.returncode:
+            raise RuntimeError(result.stdout + result.stderr)
+        entries = [item for item in _read_wsl_manifest(model_cache_dir) if item.get("model_name") != name]
+        _write_wsl_manifest(model_cache_dir, entries)
+        return True
     if Path(folder_name).name != folder_name or not folder_name.startswith((MODEL_CACHE_PREFIX, AMD_MODEL_CACHE_PREFIX, SHARED_AMD_MODEL_CACHE_PREFIX)):
         raise ValueError("Unsafe cached model folder name.")
     base = model_cache_dir.resolve(strict=False)
@@ -126,3 +152,52 @@ def _folder_size(path: Path) -> int:
     except OSError:
         return total
     return total
+
+
+def _read_wsl_manifest(cache_dir: Path) -> list:
+    try:
+        value = json.loads((cache_dir / WSL_MANIFEST_NAME).read_text(encoding="utf-8"))
+        return [item for item in value if isinstance(item, dict)] if isinstance(value, list) else []
+    except (OSError, ValueError):
+        return []
+
+
+def _write_wsl_manifest(cache_dir: Path, entries: list) -> None:
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=cache_dir, delete=False) as f:
+        json.dump(entries, f)
+        temp = Path(f.name)
+    try:
+        temp.replace(cache_dir / WSL_MANIFEST_NAME)
+    finally:
+        temp.unlink(missing_ok=True)
+
+
+def record_wsl_cached_model(cache_dir: Path, item: dict) -> None:
+    entries = [entry for entry in _read_wsl_manifest(cache_dir)
+               if entry.get("model_name") != item["model_name"]]
+    entries.append(item)
+    _write_wsl_manifest(cache_dir, entries)
+
+
+def find_cached_amd_model(cache_dir: Path, model_name: str) -> Path | None:
+    shared = cache_dir / (SHARED_AMD_MODEL_CACHE_PREFIX + model_name)
+    if (shared / ".speak_to_bridge_ready").is_file() and is_model_cache_ready(shared):
+        return shared
+    legacy = cache_dir / (AMD_MODEL_CACHE_PREFIX + model_name)
+    snapshots = legacy / "snapshots"
+    try:
+        if not snapshots.is_dir():
+            return None
+        candidates = list(snapshots.iterdir())
+        reference = legacy / "refs" / "main"
+        if reference.is_file():
+            revision = reference.read_text(encoding="utf-8").strip()
+            if len(revision) == 40 and all(c in "0123456789abcdef" for c in revision):
+                candidates.insert(0, snapshots / revision)
+        for candidate in candidates:
+            if candidate.is_dir() and candidate.resolve().parent == snapshots.resolve() and _snapshot_ready(candidate, True):
+                return candidate
+    except OSError:
+        return None
+    return None

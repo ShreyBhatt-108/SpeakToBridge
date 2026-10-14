@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 import os
 from pathlib import Path, PureWindowsPath
 import queue
@@ -17,7 +18,8 @@ def _settings() -> dict:
     if "SPEAK_TO_BRIDGE_WSL_DISTRO" in os.environ:
         return {"distribution": os.environ["SPEAK_TO_BRIDGE_WSL_DISTRO"],
                 "python": os.environ.get("SPEAK_TO_BRIDGE_WSL_PYTHON", "/opt/amd-ai/bin/python"),
-                "worker": os.environ.get("SPEAK_TO_BRIDGE_WSL_WORKER", "")}
+                "worker": os.environ.get("SPEAK_TO_BRIDGE_WSL_WORKER", ""),
+                "gpu_cache": os.environ.get("SPEAK_TO_BRIDGE_WSL_CACHE", "")}
     local = os.environ.get("LOCALAPPDATA")
     if local:
         try:
@@ -47,7 +49,7 @@ def worker_command(cache_dir: Path, model_name: str | None) -> list[str]:
         raise RuntimeError("Set SPEAK_TO_BRIDGE_WSL_WORKER to scripts/wsl_worker.py")
     command = ["wsl.exe", "--distribution", settings["distribution"],
                "--exec", settings.get("python", "/opt/amd-ai/bin/python"),
-               "-u", linux_path(Path(worker)), "--cache", linux_path(cache_dir)]
+               "-u", linux_path(Path(worker)), "--cache", settings.get("gpu_cache") or linux_path(cache_dir)]
     command += ["--model", model_name] if model_name else ["--probe"]
     return command
 
@@ -83,6 +85,12 @@ class WslWhisperModel:
             if not ready.get("ready") or not ready.get("gpu_matrix_test"):
                 raise RuntimeError("WSL worker did not verify GPU execution")
             self.device_name = ready["amd_gpu"]
+            if ready.get("model_cache") and _settings().get("gpu_cache"):
+                from .model_storage import record_wsl_cached_model
+                try:
+                    record_wsl_cached_model(cache_dir, ready["model_cache"])
+                except OSError:
+                    logging.getLogger(__name__).warning("GPU is ready, but its cache summary could not be saved", exc_info=True)
         except Exception:
             self.close()
             raise
@@ -119,7 +127,7 @@ class WslWhisperModel:
 
     def transcribe(self, audio, language, initial_prompt, vad):
         if vad.get("vad_filter"):
-            from faster_whisper.vad import get_speech_timestamps
+            from .vad import get_speech_timestamps
             spans = get_speech_timestamps(audio, **vad.get("vad_parameters", {}))
             if not spans:
                 return ""
