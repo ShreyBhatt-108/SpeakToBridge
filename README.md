@@ -23,8 +23,9 @@ preferences, and status feedback that works with JAWS.
 
 AMD Strix Halo / Radeon 8060S GPU processing is available through the optional
 ROCm backend. See [AMD setup and verification](AMD_SETUP.md). CPU processing
-continues to work without the optional runtime. The shared WSL ROCm backend has
-been verified on a Ryzen AI Max+ 388 / Radeon 8060S with Tiny, Small and Large v3 models.
+continues to work without the optional runtime. Native Windows ROCm is the default AMD path and has passed packaged Large v3
+transcription on a Ryzen AI Max+ 388 / Radeon 8060S. WSL remains an optional
+alternative and has passed Tiny, Small, Medium and Large v3 GPU tests.
 These repairs are available in source; the v1.5.0-rc.1 installer predates them.
 
 - **Local transcription:** recorded audio stays on the computer after the
@@ -90,6 +91,33 @@ includes microphone tests and remains visible during the next recording. It
 starts empty each session rather than claiming an untested GPU is already active.
 Automatic mode can fall back to CPU, so selecting GPU is not proof of GPU use.
 These indicators do not add anything to the text inserted into another app.
+
+### Native Windows AMD processing
+
+The Windows AMD build runs Whisper through bundled PyTorch and ROCm directly
+on the Radeon; Ubuntu, a Linux worker checkout, Lemonade and system Python are
+not required. Automatic GPU mode selects native ROCm unless a user explicitly
+enables `wsl-runtime.json`. To switch an existing WSL setup to native Windows,
+set its `enabled` field to `false` and restart the app.
+
+Use Windows-readable Transformers weights in `%LOCALAPPDATA%\SpeakToBridge\models`.
+Regular `openai-whisper-<size>` folders and complete Hugging Face snapshot caches
+are recognized offline. Existing weights can be hash-verified and moved between
+runtimes without downloading again. This folder can also be used as a local
+model source by the shared Windows Python environment for experiments.
+
+On the tested laptop, native Large v3 preparation including kernel warm-up took
+11.5 seconds; the first and repeated transcriptions of a 6.465-second test clip
+took 1.5 and 1.4 seconds. The native process used 0.00 CPU seconds during a
+10-second idle check. These are individual tests, not a controlled power study;
+no battery-life advantage over WSL has been established. Preparation starts
+during recording, and inference retains the FP16 model and four-beam decoding.
+CPU fallback stays isolated from ROCm's OpenMP runtime.
+
+The source and locally updated executable contain these changes; no new public
+installer has been published. The tested laptop has Smart App Control disabled
+by its owner. Distribution still requires trusted signing of the application
+and runtime binaries, plus installer testing with that protection enabled.
 
 ### How WSL connects the Windows app to AMD ROCm
 
@@ -172,9 +200,9 @@ storage avoids the mounted-Windows filesystem translation overhead while still
 using the same physical SSD. WSL stores its native ext4 filesystem inside a
 virtual disk. See [Microsoft's filesystem guidance](https://learn.microsoft.com/en-us/windows/wsl/filesystems).
 
-On the tested laptop, the existing GPU caches were copied, hash-verified, tested
-and then removed from their old Windows location, leaving one shared copy for
-SpeakToBridge and Linux AI experiments. Settings, Word Bank and CTranslate2 CPU
+During earlier WSL testing, GPU caches were moved into Ubuntu after hash
+verification. They have since been moved back into Windows for native ROCm,
+with the Ubuntu copies removed so there is one shared copy. Settings, Word Bank and CTranslate2 CPU
 weights remain in Windows application data. Windows keeps only a small GPU
 cache manifest at `models/.wsl-models.json`, so listing models does not start
 Ubuntu or read model weights. The app can delete listed Linux caches through the

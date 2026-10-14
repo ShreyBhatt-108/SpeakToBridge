@@ -60,7 +60,7 @@ class RuntimeTests(unittest.TestCase):
              patch("SpeakToBridge.whisper_engine._create_cpu_model") as cpu:
             engine = self.engine()
             engine.warm_model()
-            amd.assert_called_once_with("tiny", Path("unused-test-cache"), 0)
+            amd.assert_called_once_with("tiny", Path("unused-test-cache"), 0, status_callback=engine._emit_status)
             cpu.assert_not_called()
             self.assertIn("8060S", engine.runtime_description)
 

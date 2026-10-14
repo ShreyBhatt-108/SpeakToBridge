@@ -109,3 +109,15 @@ Also test `--cpu --wav` and an unavailable worker. The GPU-required check must
 return nonzero when transcription falls back, even if the CPU transcript succeeds.
 Verify model changes/cache refresh do not import native Windows ROCm when WSL
 is selected. Preserve the isolated native CPU worker and shared model cache.
+
+### Native Windows default validation
+
+Do not ship a machine-specific enabled WSL configuration. The AMD installer
+uses native Windows ROCm by default; WSL is opt-in. Verify Large v3 with the
+packaged `--check-hardware --require-amd --wav --model large-v3` command, explicit
+CPU transcription, and a GPU-unavailable run which transcribes through the
+isolated CPU worker after ROCm import. Preserve user caches and settings.
+Native preparation includes inference-kernel warm-up before reporting Ready.
+A passing local test with Smart App Control disabled does not replace signed
+installer testing on a protected machine. No new public installer was published
+as part of these local native-backend tests.

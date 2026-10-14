@@ -121,6 +121,11 @@ class AmdWhisperModel:
             if status_callback:
                 status_callback("Moving model weights into Radeon GPU memory.")
             self._model = self._model.to(self._device).eval()
+        if sys.platform == "win32":
+            if status_callback:
+                status_callback("Warming Radeon inference kernels; preparing the first transcription.")
+            self.transcribe(np.zeros(16000, dtype=np.float32), "en", "", {"vad_filter": False})
+            torch.cuda.synchronize(device_index)
 
     def transcribe(self, audio: np.ndarray, language: str, initial_prompt: str, vad: dict) -> str:
         if vad.get("vad_filter"):

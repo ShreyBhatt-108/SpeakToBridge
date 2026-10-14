@@ -21,9 +21,10 @@ If it reports CPU, dictation still works but GPU acceleration was not activated.
 The current prerelease targets Ryzen AI Max+ 388 / Radeon 8060S (`gfx1151`).
 The bundled runtime is ROCm 7.2.1 / PyTorch 2.9.1; the legacy AMD 7.2.1 Windows
 matrix lists the same gfx1151 architecture but does not explicitly name the 388.
-The newer AMD ROCm documentation explicitly lists the 388. The original native Windows bundle has not passed GPU verification on this
-388 under Smart App Control. The shared WSL backend described below has passed
-real Tiny, Small and Large v3 GPU transcription on this hardware.
+The newer AMD ROCm documentation explicitly lists the 388. The updated native Windows executable has passed Large v3 Radeon transcription,
+FP16 matrix execution, and isolated CPU fallback on this 388 after the owner
+disabled Smart App Control. This does not verify distribution with that
+protection enabled. WSL also passed Tiny, Small, Medium and Large v3 transcription.
 
 AMD's [Adrenalin 26.2.2 release page](https://www.amd.com/en/resources/support-articles/release-notes/RN-RAD-WIN-26-2-2.html)
 contains the official driver download for the documented ROCm 7.2.1 combination.
@@ -247,8 +248,9 @@ usable directly by Transformers experiments. Linux storage avoids repeated
 filesystem translation through `/mnt/c` while using the same SSD. For the
 filesystem rationale, see [Microsoft's WSL filesystem guidance](https://learn.microsoft.com/en-us/windows/wsl/filesystems).
 Ensure the directory is writable by the distro's default user. This laptop's
-existing Tiny, Small, Medium and Large v3 GPU caches were hash-verified after copying
-and moved into this shared Linux cache; no duplicate GPU copies remain.
+Tiny, Small, Medium and Large v3 GPU caches were previously moved into Linux
+for WSL testing, then hash-verified and returned to Windows for native use.
+The Linux copies were removed; one shared Windows copy remains.
 
 Omitting `gpu_cache` preserves the legacy Windows cache behavior. Native Windows
 ROCm still uses Windows-readable weights; relocate the same files when changing
@@ -271,3 +273,18 @@ Small-model and GUI results. No GPU-enabled release has been published.
 AMD installation references:
 - https://rocm.docs.amd.com/en/docs-7.14.1/install/rocm.html
 - https://rocm.docs.amd.com/projects/ai-ecosystem/en/latest/frameworks/pytorch/install.html
+
+## Switching this laptop to native Windows
+
+Native ROCm is the default when WSL is not explicitly enabled. The tested
+configuration now sets `enabled: false` in `wsl-runtime.json` and retains its
+Ubuntu runtime for optional experimentation. Models reside in
+`%LOCALAPPDATA%\SpeakToBridge\models`; CPU models, settings and Word Bank remain
+in place. To re-enable WSL with these same files, use their `/mnt/c/...` path as
+`gpu_cache` (loading may be slower), or relocate the one shared copy again.
+
+Native preparation emits weight-loading and kernel warm-up progress. A measured
+Large v3 run took 11.5 seconds to prepare and approximately 1.5 seconds to
+transcribe a 6.465-second recording; a repeat took 1.4 seconds. Native idle CPU
+was 0.00 seconds over 10 seconds. These measurements are not a battery benchmark.
+The current release installer predates these locally verified repairs.

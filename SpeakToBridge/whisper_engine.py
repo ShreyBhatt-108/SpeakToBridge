@@ -173,7 +173,8 @@ class WhisperEngine:
             source = (f"Hugging Face Hub (openai/whisper-{model_name})" if device in ("rocm", "wsl_rocm")
                       else self._model_source(model_name))
             if device in ("rocm", "wsl_rocm"):
-                self._emit_status(f"Starting AMD GPU worker for '{model_name}'.")
+                action = "Starting AMD GPU worker" if device == "wsl_rocm" else "Preparing native AMD GPU model"
+                self._emit_status(f"{action} for '{model_name}'.")
             elif self._is_model_cached_locally(model_name):
                 self._emit_status(f"Loading model '{model_name}' from local cache.")
             else:
@@ -190,7 +191,7 @@ class WhisperEngine:
                         loaded_model = WslWhisperModel(model_name, self._model_cache_dir, status_callback=self._emit_status)
                         self._amd_device_name = loaded_model.device_name
                     else:
-                        loaded_model = AmdWhisperModel(model_name, self._model_cache_dir, self._amd_device_index)
+                        loaded_model = AmdWhisperModel(model_name, self._model_cache_dir, self._amd_device_index, status_callback=self._emit_status)
                 else:
                     torch = sys.modules.get("torch")
                     if device == "cpu" and (rocm_import_attempted() or getattr(getattr(torch, "version", None), "hip", None)):
