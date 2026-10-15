@@ -26,7 +26,8 @@ ROCm backend. See [AMD setup and verification](AMD_SETUP.md). CPU processing
 continues to work without the optional runtime. Native Windows ROCm is the default AMD path and has passed packaged Large v3
 transcription on a Ryzen AI Max+ 388 / Radeon 8060S. WSL remains an optional
 alternative and has passed Tiny, Small, Medium and Large v3 GPU tests.
-These repairs are available in source; the v1.5.0-rc.1 installer predates them.
+The v1.5.1-rc.1 CPU and AMD installers contain these repairs. They are local
+release-candidate artifacts; older public installers predate the fixes.
 
 - **Local transcription:** recorded audio stays on the computer after the
   selected Whisper model has been downloaded.
@@ -67,14 +68,47 @@ especially useful.
 
 Download the current installer from
 [GitHub Releases](https://github.com/ShreyBhatt-108/SpeakToBridge/releases/latest),
-then run `SpeakToBridge-Setup.exe`.
+then choose the appropriate published installer:
+
+- `SpeakToBridge-Setup.exe`: standard x64 build for Intel or AMD CPU processing
+  and the existing NVIDIA path. It does not include or require ROCm/PyTorch.
+- `SpeakToBridge-AMD-Setup.exe`: includes native Windows ROCm/PyTorch for
+  supported Radeon GPUs, plus isolated CPU fallback. It is substantially larger.
+
+Both bundle Python and preserve user settings, Word Bank and downloaded models.
+The newly built v1.5.1-rc.1 candidates are not yet uploaded to Releases.
+Artifact hashes, checks and remaining hardware coverage are in
+[release validation](RELEASE_VALIDATION.md).
 
 The current installer is not digitally signed, so Windows may display an
-unknown-publisher or SmartScreen warning. Verify that the download came from
+unknown-publisher or SmartScreen warning. Smart App Control may block unsigned
+application or runtime files outright; protected-machine distribution still
+needs trusted signing and validation. Verify that the download came from
 this repository's Releases page before running it.
 
 On first transcription, the selected Whisper model is downloaded and stored in
 local application data. Transcription can run offline after that model is ready.
+
+### CPU compatibility and validation
+
+The standard build uses CTranslate2's x86-64 CPU backend, which supports Intel
+and AMD CPUs with SSE 4.1 or newer and selects appropriate instruction sets at
+runtime. See [CTranslate2 hardware support](https://opennmt.net/CTranslate2/hardware_support.html).
+It does not require an AMD graphics card, WSL, a system Python or GPU packages.
+
+For this candidate, all 44 regression tests passed in both a clean CPU-only
+build environment and the AMD build overlay. Packaged Tiny/Small/Medium CPU
+transcription, automatic CPU selection without PyTorch, the generic CPU path,
+a forced MKL backend check, and a 38.79-second recording passed on the AMD
+laptop. The forced MKL check is not a physical Intel-machine test. This exact
+candidate still needs an Intel hardware smoke test; earlier Intel results do
+not establish validation of a newly built binary. No claim of universal hardware
+or battery-life validation is made.
+
+The AMD build now isolates CPU inference before the first GPU import, avoiding
+an OpenMP crash when switching CPU → AMD → CPU. Switching models and closing
+the app explicitly release CPU workers. Installer upgrades request a graceful
+shutdown and keep the user-data directory outside the replaced application.
 
 ## Python and processing backends
 
@@ -114,8 +148,8 @@ no battery-life advantage over WSL has been established. Preparation starts
 during recording, and inference retains the FP16 model and four-beam decoding.
 CPU fallback stays isolated from ROCm's OpenMP runtime.
 
-The source and locally updated executable contain these changes; no new public
-installer has been published. The tested laptop has Smart App Control disabled
+Local v1.5.1-rc.1 installers contain these changes; they have not been uploaded
+as a public release. The tested laptop has Smart App Control disabled
 by its owner. Distribution still requires trusted signing of the application
 and runtime binaries, plus installer testing with that protection enabled.
 

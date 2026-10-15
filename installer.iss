@@ -25,7 +25,7 @@ ArchitecturesInstallIn64BitMode=x64compatible
 PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
 UninstallDisplayIcon={app}\SpeakToBridge.exe
-CloseApplications=force
+CloseApplications=yes
 CloseApplicationsFilter=SpeakToBridge.exe
 RestartApplications=no
 SetupLogging=yes
@@ -36,8 +36,12 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 [Tasks]
 Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Additional shortcuts:"; Flags: unchecked
 
+#ifndef AppSourceDir
+  #define AppSourceDir "dist\SpeakToBridge"
+#endif
+
 [Files]
-Source: "dist\SpeakToBridge\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#AppSourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [InstallDelete]
 ; Replace packaged dependencies when switching CPU/AMD builds or Python ABIs.
@@ -53,3 +57,22 @@ Filename: "{app}\SpeakToBridge.exe"; Description: "Launch Speak to Bridge"; Flag
 
 [UninstallRun]
 Filename: "{app}\SpeakToBridge.exe"; Parameters: "--shutdown-for-uninstall"; Flags: runhidden waituntilterminated; RunOnceId: "ShutdownSpeakToBridge"
+
+[Code]
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  AppExecutable: String;
+  ResultCode: Integer;
+begin
+  Result := '';
+  AppExecutable := ExpandConstant('{app}\SpeakToBridge.exe');
+  if FileExists(AppExecutable) then
+  begin
+    { Ask the existing app to save pending Word Bank edits and release workers. }
+    if not Exec(AppExecutable, '--shutdown-for-uninstall', '', SW_HIDE,
+      ewWaitUntilTerminated, ResultCode) then
+      Result := 'Please close Speak to Bridge before continuing the installation.'
+    else if ResultCode <> 0 then
+      Result := 'Speak to Bridge could not close safely. Close it and retry installation.';
+  end;
+end;

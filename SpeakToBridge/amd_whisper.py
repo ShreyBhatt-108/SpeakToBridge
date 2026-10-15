@@ -48,13 +48,18 @@ def rocm_import_attempted() -> bool:
     return _rocm_import_attempted
 
 
+def rocm_runtime_installed() -> bool:
+    # Metadata inspection must not load either inference/OpenMP runtime.
+    try:
+        return "rocm" in importlib.metadata.version("torch").lower()
+    except importlib.metadata.PackageNotFoundError:
+        return False
+
+
 def amd_device() -> tuple[int, str] | None:
     global _rocm_import_attempted
     try:
-        try:
-            _rocm_import_attempted |= "rocm" in importlib.metadata.version("torch").lower()
-        except importlib.metadata.PackageNotFoundError:
-            pass
+        _rocm_import_attempted |= rocm_runtime_installed()
         with optional_runtime_import():
             import torch
 

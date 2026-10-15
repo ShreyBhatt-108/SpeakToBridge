@@ -109,6 +109,7 @@ class PreparationTests(unittest.TestCase):
             return model
         with patch("SpeakToBridge.whisper_engine._create_cpu_model", side_effect=load) as loader, \
              patch("SpeakToBridge.whisper_engine.rocm_import_attempted", return_value=False), \
+             patch("SpeakToBridge.whisper_engine.rocm_runtime_installed", return_value=False), \
              patch.dict(__import__('sys').modules, {"torch":None}):
             engine = WhisperEngine("tiny", "en", "cpu", "off", Path("unused"))
             engine.prepare_async()

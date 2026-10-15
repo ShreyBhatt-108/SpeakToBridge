@@ -267,7 +267,7 @@ Target hardware checks after restart: Radeon 8060S detection, FP16 matrix
 execution and packaged Tiny/Small/Medium/Large v3 speech transcription passed. The runtime reported
 18,141,939,712 bytes (16.90 GiB) of GPU memory with the firmware's 2 GB allocation.
 Explicit CPU transcription and unavailable-WSL-worker CPU fallback passed.
-42 regression tests passed, including persistent backend reporting, lazy startup, offline cache summaries and shared preparation. See the local troubleshooting report for the latest
+44 regression tests passed, including persistent backend reporting, lazy startup, offline cache summaries and shared preparation. See the local troubleshooting report for the latest
 Small-model and GUI results. No GPU-enabled release has been published.
 
 AMD installation references:
@@ -288,3 +288,12 @@ Large v3 run took 11.5 seconds to prepare and approximately 1.5 seconds to
 transcribe a 6.465-second recording; a repeat took 1.4 seconds. Native idle CPU
 was 0.00 seconds over 10 seconds. These measurements are not a battery benchmark.
 The current release installer predates these locally verified repairs.
+
+## v1.5.1-rc.1 CPU/GPU switching repair
+
+The AMD build starts CPU inference in its isolated worker even before ROCm is
+first imported. This prevents CTranslate2's OpenMP runtime from entering the
+GUI process and crashing a later switch to native AMD. CPU workers close
+explicitly on model/runtime changes and engine shutdown. The standard CPU
+installer remains free of PyTorch/ROCm. Local candidate installers contain
+these repairs; the public release page has not been updated by this build.

@@ -30,6 +30,7 @@ class BackendIndicatorTests(unittest.TestCase):
              patch("SpeakToBridge.whisper_engine.amd_device", return_value=(0, "8060S")), \
              patch("SpeakToBridge.whisper_engine.AmdWhisperModel"), \
              patch("SpeakToBridge.whisper_engine._create_cpu_model"), \
+             patch("SpeakToBridge.whisper_engine.rocm_runtime_installed", return_value=False), \
              patch("SpeakToBridge.whisper_engine.rocm_import_attempted", return_value=False):
             def transcribe(audio, prompt):
                 engine.warm_model()

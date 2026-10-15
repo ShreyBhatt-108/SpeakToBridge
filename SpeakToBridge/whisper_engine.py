@@ -29,7 +29,7 @@ def _create_cpu_model(*args, **kwargs):
 
 from .wsl_whisper import WslWhisperModel, wsl_enabled
 from .model_storage import is_model_cache_ready
-from .amd_whisper import AmdWhisperModel, amd_device, rocm_import_attempted
+from .amd_whisper import AmdWhisperModel, amd_device, rocm_import_attempted, rocm_runtime_installed
 
 
 LOGGER = logging.getLogger(__name__)
@@ -82,7 +82,8 @@ class WhisperEngine:
 
     def _release_model(self) -> None:
         # WSL readers hold their process until explicitly closed.
-        if getattr(self._model, "_wsl_worker", False) is True:
+        if (getattr(self._model, "_wsl_worker", False) is True
+                or getattr(self._model, "_cpu_worker", False) is True):
             self._model.close()
         self._model = None
 
@@ -194,7 +195,7 @@ class WhisperEngine:
                         loaded_model = AmdWhisperModel(model_name, self._model_cache_dir, self._amd_device_index, status_callback=self._emit_status)
                 else:
                     torch = sys.modules.get("torch")
-                    if device == "cpu" and (rocm_import_attempted() or getattr(getattr(torch, "version", None), "hip", None)):
+                    if device == "cpu" and (rocm_runtime_installed() or rocm_import_attempted() or getattr(getattr(torch, "version", None), "hip", None)):
                         from .cpu_worker import CpuWhisperWorker
                         loaded_model = CpuWhisperWorker(model_name, self._model_cache_dir)
                     else:
@@ -218,12 +219,14 @@ class WhisperEngine:
                 self._loading_in_progress = False
                 self._model_cv.notify_all()
                 if self._closed:
-                    if getattr(loaded_model, "_wsl_worker", False) is True:
+                    if (getattr(loaded_model, "_wsl_worker", False) is True
+                            or getattr(loaded_model, "_cpu_worker", False) is True):
                         loaded_model.close()
                     raise RuntimeError("Transcription engine is shutting down")
                 # If the requested model changed while loading, discard and load current target.
                 if self._model_name != model_name or self._runtime_mode != runtime_mode:
-                    if getattr(loaded_model, "_wsl_worker", False) is True:
+                    if (getattr(loaded_model, "_wsl_worker", False) is True
+                            or getattr(loaded_model, "_cpu_worker", False) is True):
                         loaded_model.close()
                     continue
                 self._device = device

@@ -13,6 +13,8 @@ import numpy as np
 
 
 class CpuWhisperWorker:
+    _cpu_worker = True
+
     def __init__(self, model_name: str, cache_dir: Path) -> None:
         command = [sys.executable]
         if not getattr(sys, "frozen", False):
@@ -43,7 +45,7 @@ class CpuWhisperWorker:
             reply = self._read_reply()
         return [SimpleNamespace(text=text) for text in reply["segments"]], None
 
-    def __del__(self):
+    def close(self):
         process = getattr(self, "_process", None)
         if process is not None and process.poll() is None:
             process.terminate()
@@ -52,6 +54,12 @@ class CpuWhisperWorker:
             for stream in (process.stdin, process.stdout):
                 if stream is not None:
                     stream.close()
+
+    def __del__(self):
+        try:
+            self.close()
+        except (OSError, ValueError):
+            pass
 
 
 def main(arguments):

@@ -32,6 +32,7 @@ class WslRuntimeTests(unittest.TestCase):
              patch("SpeakToBridge.whisper_engine.amd_device") as native, \
              patch("SpeakToBridge.whisper_engine.WslWhisperModel", side_effect=RuntimeError("WSL unavailable")), \
              patch("SpeakToBridge.whisper_engine._create_cpu_model") as cpu, \
+             patch("SpeakToBridge.whisper_engine.rocm_runtime_installed", return_value=False), \
              patch("SpeakToBridge.whisper_engine.rocm_import_attempted", return_value=False):
             engine = WhisperEngine("tiny", "en", "amd_gpu", "off", Path("cache"))
             engine.warm_model()

@@ -18,6 +18,9 @@ from SpeakToBridge.whisper_engine import WhisperEngine
 class RuntimeTests(unittest.TestCase):
     def setUp(self):
         # Native-runtime tests must not inherit the user's persisted WSL choice.
+        runtime = patch("SpeakToBridge.whisper_engine.rocm_runtime_installed", return_value=False)
+        runtime.start()
+        self.addCleanup(runtime.stop)
         selection = patch("SpeakToBridge.whisper_engine.wsl_enabled", return_value=False)
         selection.start()
         self.addCleanup(selection.stop)
@@ -84,6 +87,23 @@ class RuntimeTests(unittest.TestCase):
             worker.assert_called_once_with("tiny", Path("unused-test-cache"))
             cpu.assert_not_called()
             self.assertEqual(engine.runtime_description, "CPU (INT8)")
+
+    def test_cpu_before_first_gpu_import_is_isolated_when_rocm_is_installed(self):
+        with patch("SpeakToBridge.whisper_engine.rocm_runtime_installed", return_value=True), \
+             patch("SpeakToBridge.cpu_worker.CpuWhisperWorker") as worker, \
+             patch("SpeakToBridge.whisper_engine._create_cpu_model") as direct_cpu:
+            engine = self.engine("cpu")
+            engine.warm_model()
+            worker.assert_called_once_with("tiny", Path("unused-test-cache"))
+            direct_cpu.assert_not_called()
+
+    def test_switching_models_closes_the_previous_cpu_worker(self):
+        engine = self.engine("cpu")
+        worker = Mock(_cpu_worker=True)
+        engine._model = worker
+        engine.update_model("small")
+        worker.close.assert_called_once()
+        self.assertIsNone(engine._model)
 
     def test_failed_rocm_import_keeps_cpu_in_isolated_worker(self):
         with patch("SpeakToBridge.whisper_engine.rocm_import_attempted", return_value=True), \

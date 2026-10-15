@@ -121,3 +121,22 @@ Native preparation includes inference-kernel warm-up before reporting Ready.
 A passing local test with Smart App Control disabled does not replace signed
 installer testing on a protected machine. No new public installer was published
 as part of these local native-backend tests.
+
+### v1.5.1-rc.1 optimization and CPU release checks
+
+Build the standard installer in a clean environment without PyTorch/ROCm; use
+an isolated AMD build overlay when reusing a shared ROCm installation. Preserve
+the verified CPU payload before the AMD build replaces `dist/SpeakToBridge`.
+`AppSourceDir` can be passed to Inno Setup to compile an installer from that
+preserved payload without changing its installed layout.
+
+Run regressions in both environments and test packaged automatic CPU selection,
+explicit CPU, actual Radeon Large v3, GPU-unavailable isolated fallback, and
+CPU → AMD → CPU switching. Include a recording longer than 30 seconds. Record
+which hardware was actually tested; generic ISA and forced MKL checks on AMD
+do not replace an Intel-machine smoke test. Upgrade testing must compare saved
+settings/Word Bank and leave model caches intact. Installers request the old
+app's save-and-shutdown helper before replacing dependencies.
+
+The local candidates remain unsigned unless a trusted signing certificate is
+configured. Test with Smart App Control enabled before public distribution.
