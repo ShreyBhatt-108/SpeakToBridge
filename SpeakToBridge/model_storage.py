@@ -4,6 +4,8 @@ import shutil
 import json
 import os
 import tempfile
+import re
+import stat
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -64,7 +66,19 @@ def list_cached_models(model_cache_dir: Path) -> list[CachedModelInfo]:
     return sorted(results, key=lambda item: item.model_name)
 
 
+def cached_model_name(folder_name: str) -> str:
+    if not isinstance(folder_name, str):
+        raise ValueError("Invalid model folder")
+    for prefix in (MODEL_CACHE_PREFIX, AMD_MODEL_CACHE_PREFIX, SHARED_AMD_MODEL_CACHE_PREFIX, WSL_MODEL_CACHE_PREFIX):
+        if folder_name.startswith(prefix):
+            name = folder_name[len(prefix):]
+            if re.fullmatch(r"[a-z0-9][a-z0-9._-]*", name):
+                return name
+    raise ValueError("Invalid model folder")
+
+
 def delete_cached_model(model_cache_dir: Path, folder_name: str) -> bool:
+    cached_model_name(folder_name)
     if folder_name.startswith(WSL_MODEL_CACHE_PREFIX):
         name = folder_name[len(WSL_MODEL_CACHE_PREFIX):]
         if name not in ("tiny", "base", "small", "medium", "large-v3"):
@@ -76,13 +90,28 @@ def delete_cached_model(model_cache_dir: Path, folder_name: str) -> bool:
                                 creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
         if result.returncode:
             raise RuntimeError(result.stdout + result.stderr)
+        try:
+            reply = json.loads(result.stdout.strip().splitlines()[-1])
+            if reply.get("deleted") != name:
+                raise ValueError("Unexpected deletion response")
+        except (ValueError, IndexError, AttributeError) as exc:
+            raise RuntimeError("WSL did not confirm model deletion") from exc
         entries = [item for item in _read_wsl_manifest(model_cache_dir) if item.get("model_name") != name]
         _write_wsl_manifest(model_cache_dir, entries)
-        return True
+        return reply.get("removed", True) is True
     if Path(folder_name).name != folder_name or not folder_name.startswith((MODEL_CACHE_PREFIX, AMD_MODEL_CACHE_PREFIX, SHARED_AMD_MODEL_CACHE_PREFIX)):
         raise ValueError("Unsafe cached model folder name.")
     base = model_cache_dir.resolve(strict=False)
-    target = (base / folder_name).resolve(strict=False)
+    candidate = base / folder_name
+    try:
+        info = candidate.lstat()
+    except FileNotFoundError:
+        return False
+    if stat.S_ISLNK(info.st_mode) or getattr(info, "st_file_attributes", 0) & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0):
+        raise ValueError("Model folder links cannot be deleted")
+    target = candidate.resolve(strict=False)
+    if target.parent != base:
+        raise ValueError("Model folder is outside the cache")
     try:
         target.relative_to(base)
     except ValueError as exc:

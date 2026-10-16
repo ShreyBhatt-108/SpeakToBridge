@@ -42,6 +42,8 @@ def _has_cuda_device() -> bool:
     if rocm_import_attempted():
         return False
     try:
+        from .cuda_runtime import configure_cuda_dlls
+        configure_cuda_dlls()
         import ctranslate2  # pylint: disable=import-outside-toplevel
 
         return ctranslate2.get_cuda_device_count() > 0
@@ -195,7 +197,12 @@ class WhisperEngine:
                         loaded_model = AmdWhisperModel(model_name, self._model_cache_dir, self._amd_device_index, status_callback=self._emit_status)
                 else:
                     torch = sys.modules.get("torch")
-                    if device == "cpu" and (rocm_runtime_installed() or rocm_import_attempted() or getattr(getattr(torch, "version", None), "hip", None)):
+                    if device == "cuda":
+                        # Missing CUDA/cuDNN DLLs can abort native inference. A child
+                        # process keeps the UI alive and lets the same clip retry on CPU.
+                        from .cpu_worker import CpuWhisperWorker
+                        loaded_model = CpuWhisperWorker(model_name, self._model_cache_dir, device=device, compute_type=compute_type)
+                    elif device == "cpu" and (rocm_runtime_installed() or rocm_import_attempted() or getattr(getattr(torch, "version", None), "hip", None)):
                         from .cpu_worker import CpuWhisperWorker
                         loaded_model = CpuWhisperWorker(model_name, self._model_cache_dir)
                     else:

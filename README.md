@@ -26,7 +26,7 @@ ROCm backend. See [AMD setup and verification](AMD_SETUP.md). CPU processing
 continues to work without the optional runtime. Native Windows ROCm is the default AMD path and has passed packaged Large v3
 transcription on a Ryzen AI Max+ 388 / Radeon 8060S. WSL remains an optional
 alternative and has passed Tiny, Small, Medium and Large v3 GPU tests.
-The v1.5.1-rc.1 CPU and AMD installers contain these repairs. They are local
+The v1.5.1-rc.3 CPU, CUDA and AMD installers contain these repairs. They are local
 release-candidate artifacts; older public installers predate the fixes.
 
 - **Local transcription:** recorded audio stays on the computer after the
@@ -71,12 +71,22 @@ Download the current installer from
 then choose the appropriate published installer:
 
 - `SpeakToBridge-Setup.exe`: standard x64 build for Intel or AMD CPU processing
-  and the existing NVIDIA path. It does not include or require ROCm/PyTorch.
-- `SpeakToBridge-AMD-Setup.exe`: includes native Windows ROCm/PyTorch for
-  supported Radeon GPUs, plus isolated CPU fallback. It is substantially larger.
+  and an existing compatible NVIDIA runtime. It includes no GPU development toolkit.
+- `SpeakToBridge-CUDA-Setup.exe`: bundles NVIDIA CUDA 12 / cuDNN 9 inference
+  DLLs, with CPU fallback when a compatible NVIDIA GPU/driver is unavailable.
+- Hardware-specific `SpeakToBridge-AMD-gfxNNNN-Setup.exe` packages include native
+  Windows ROCm/PyTorch and isolated CPU fallback for the named GPU target.
+- `SpeakToBridge-AMD-StrixHalo-Setup.exe`: smaller AMD package for gfx1151
+  (including Radeon 8060S), with the same runtime and CPU fallback.
 
-Both bundle Python and preserve user settings, Word Bank and downloaded models.
-The newly built v1.5.1-rc.1 candidates are not yet uploaded to Releases.
+The universal AMD build is for local testing: its current 2.93 GB installer
+exceeds GitHub's 2 GiB per-asset limit. Published AMD builds must use a specific
+hardware target; Strix Halo is the candidate tested on this laptop.
+
+All variants bundle Python 3.14.8 and preserve settings, Word Bank and downloaded
+models. Users need no installed Python; other system Python versions do not
+affect the app. GPU drivers remain system prerequisites for GPU acceleration.
+The newly built v1.5.1-rc.3 candidates are not yet uploaded to Releases.
 Artifact hashes, checks and remaining hardware coverage are in
 [release validation](RELEASE_VALIDATION.md).
 
@@ -96,7 +106,7 @@ and AMD CPUs with SSE 4.1 or newer and selects appropriate instruction sets at
 runtime. See [CTranslate2 hardware support](https://opennmt.net/CTranslate2/hardware_support.html).
 It does not require an AMD graphics card, WSL, a system Python or GPU packages.
 
-For this candidate, all 44 regression tests passed in both a clean CPU-only
+For this candidate, all 68 regression tests passed in both a clean CPU-only
 build environment and the AMD build overlay. Packaged Tiny/Small/Medium CPU
 transcription, automatic CPU selection without PyTorch, the generic CPU path,
 a forced MKL backend check, and a 38.79-second recording passed on the AMD
@@ -148,7 +158,7 @@ no battery-life advantage over WSL has been established. Preparation starts
 during recording, and inference retains the FP16 model and four-beam decoding.
 CPU fallback stays isolated from ROCm's OpenMP runtime.
 
-Local v1.5.1-rc.1 installers contain these changes; they have not been uploaded
+Local v1.5.1-rc.3 installers contain these changes; they have not been uploaded
 as a public release. The tested laptop has Smart App Control disabled
 by its owner. Distribution still requires trusted signing of the application
 and runtime binaries, plus installer testing with that protection enabled.
@@ -412,3 +422,28 @@ its third-party components. See [LICENSE](LICENSE) for the project terms and
 Python packages and other third-party components remain subject to their own
 licenses. The names and trademarks of third parties belong to their respective
 owners.
+
+## Accessibility, security and package size review
+
+The rc.3 update keeps the same status-announcement events but shortens their text. Hardware/runtime
+strings and repeated totals are omitted from automatic speech; backend details
+remain inspectable. Microphone checks show a summary with optional details.
+Model deletion runs in the background, protects every layout of the active
+model, requires confirmation and rejects links/path escapes. Your settings,
+Word Bank and existing models are preserved.
+
+The inference bundle omits SDK compiler tools, headers and static development
+libraries; runtime DLLs and kernels stay intact. The shared Windows/WSL AI
+environments are not removed. See [security review](SECURITY_REVIEW.md) for audit
+results and compatibility checks. The old advisory-flagged AMD runtime is
+replaced by official stable PyTorch 2.14.0+rocm10.1.0 and Transformers 5.20.0.
+The pinned CPU, AMD model/PyTorch and NVIDIA package checks reported no known
+findings. GPU and CPU fallback remain verified separately; NVIDIA hardware and
+other Radeon models still need device-specific validation.
+
+Windows kernel warm-up bounds its synthetic silence generation to two tokens;
+real dictation keeps its normal beam/length settings. CUDA inference is isolated
+so a failed native GPU worker can retry the original recording on CPU. A Windows
+CI workflow runs the regression suite and frozen CPU transcription with Python
+removed from PATH. See [release validation](RELEASE_VALIDATION.md) for artifact
+hashes, sizes and measured limits.

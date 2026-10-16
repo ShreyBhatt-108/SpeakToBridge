@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import platform
+import os
 import sys
 import subprocess
 import traceback
@@ -32,7 +33,7 @@ def main(arguments: list[str]) -> int:
     if sys.platform == "win32":
         try:
             hardware = subprocess.run(
-                ["powershell", "-NoProfile", "-Command",
+                [str(Path(os.environ.get("SystemRoot", r"C:\Windows")) / r"System32\WindowsPowerShell\v1.0\powershell.exe"), "-NoProfile", "-Command",
                  "@{cpu=(Get-CimInstance Win32_Processor | Select-Object -ExpandProperty Name); graphics=@(Get-CimInstance Win32_VideoController | Select-Object Name,DriverVersion)} | ConvertTo-Json -Depth 4"],
                 capture_output=True, text=True, timeout=20, check=True,
                 creationflags=subprocess.CREATE_NO_WINDOW,

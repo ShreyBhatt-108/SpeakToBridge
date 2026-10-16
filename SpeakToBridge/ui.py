@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from .accessibility import concise_status
+
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import (
     QAccessible,
@@ -309,6 +311,11 @@ class SettingsWindow(QMainWindow):
         self.microphone_test_result.setAccessibleName("Microphone test result")
         self.microphone_test_result.setAccessibleDescription("Audio level, clipping, recognition accuracy, and transcript from the microphone test.")
         microphone_layout.addWidget(self.microphone_test_result)
+        self.microphone_details_checkbox = QCheckBox("Show microphone details")
+        self._microphone_summary = "No microphone test has been run."
+        self._microphone_details = self._microphone_summary
+        self.microphone_details_checkbox.toggled.connect(self._show_microphone_details)
+        microphone_layout.addWidget(self.microphone_details_checkbox)
         body_layout.addWidget(microphone_group)
 
         storage_group = QGroupBox("Model Storage")
@@ -517,7 +524,8 @@ class SettingsWindow(QMainWindow):
         self.setTabOrder(self.microphone_test_phrase_value, self.microphone_test_start_button)
         self.setTabOrder(self.microphone_test_start_button, self.microphone_test_stop_button)
         self.setTabOrder(self.microphone_test_stop_button, self.microphone_test_result)
-        self.setTabOrder(self.microphone_test_result, self.lifetime_summary_value)
+        self.setTabOrder(self.microphone_test_result, self.microphone_details_checkbox)
+        self.setTabOrder(self.microphone_details_checkbox, self.lifetime_summary_value)
         self.setTabOrder(self.lifetime_summary_value, self.status_value)
         self.setTabOrder(self.status_value, self.settings_toggle_button)
         self.setTabOrder(self.settings_toggle_button, self.dictation_toggle_button)
@@ -542,9 +550,12 @@ class SettingsWindow(QMainWindow):
         self.model_combo.setFocus()
 
     def set_status(self, message: str) -> None:
+        detail = message
+        message = concise_status(message)
+        self.status_value.setToolTip(detail)
         self.status_value.setPlainText(message)
         self.status_value.moveCursor(QTextCursor.MoveOperation.Start)
-        self.status_value.setAccessibleName(f"Current runtime status: {message}")
+        self.status_value.setAccessibleName(f"Status: {message}")
         QAccessible.updateAccessibility(
             QAccessibleEvent(self.status_value, QAccessible.Event.NameChanged)
         )
@@ -558,7 +569,7 @@ class SettingsWindow(QMainWindow):
         self.microphone_test_start_button.setText(
             "Microphone Test Recording" if recording else "Start Microphone Test"
         )
-        state = "Microphone test recording. Read the displayed sentence, then select Stop and Analyze." if recording else "Microphone test recording stopped. Analysis may still be in progress."
+        state = "Microphone recording. Read the sentence, then stop." if recording else "Recording stopped. Checking microphone."
         announcement = QAccessibleAnnouncementEvent(self.microphone_test_start_button, state)
         announcement.setPoliteness(QAccessible.AnnouncementPoliteness.Polite)
         QAccessible.updateAccessibility(announcement)
@@ -576,19 +587,24 @@ class SettingsWindow(QMainWindow):
             f"Expected: {result['expected']}\n"
             f"Model heard: {transcript}"
         )
-        self.microphone_test_result.setPlainText(text)
+        self._microphone_details = text
+        self._microphone_summary = f"{quality['assessment']} Accuracy: {accuracy_text}."
+        self._show_microphone_details(self.microphone_details_checkbox.isChecked())
         self.microphone_test_result.moveCursor(QTextCursor.MoveOperation.Start)
-        self.microphone_test_result.setAccessibleName(f"Microphone test result: {text}")
+        self.microphone_test_result.setAccessibleName("Microphone check result")
         QAccessible.updateAccessibility(
             QAccessibleEvent(self.microphone_test_result, QAccessible.Event.NameChanged)
         )
         announcement = QAccessibleAnnouncementEvent(
             self.microphone_test_result,
-            f"Microphone test complete. {quality['assessment']} Model accuracy: {accuracy_text}."
+            f"Microphone check complete. {self._microphone_summary}"
         )
         announcement.setPoliteness(QAccessible.AnnouncementPoliteness.Assertive)
         QAccessible.updateAccessibility(announcement)
         self.microphone_test_result.setFocus()
+
+    def _show_microphone_details(self, show: bool) -> None:
+        self.microphone_test_result.setPlainText(self._microphone_details if show else self._microphone_summary)
 
     def set_loaded_backend(self, description: str) -> None:
         self.loaded_backend_value.setText(description)
@@ -752,6 +768,13 @@ class SettingsWindow(QMainWindow):
                 entries.append((wrong, correct))
         self.word_bank_save_requested.emit(entries)
 
+    def set_model_cache_deleting(self, deleting: bool) -> None:
+        self._model_cache_deleting = deleting
+        self.model_cache_list.setEnabled(not deleting)
+        self.model_cache_refresh_button.setEnabled(not deleting)
+        self.model_cache_delete_button.setText("Deleting..." if deleting else "Delete Selected Model")
+        self._update_model_cache_delete_button()
+
     def _emit_model_cache_delete_requested(self) -> None:
         current = self.model_cache_list.currentItem()
         if current is None:
@@ -761,7 +784,7 @@ class SettingsWindow(QMainWindow):
             answer = QMessageBox.question(
                 self,
                 "Delete Cached Model",
-                f"Delete {current.text()} from this computer?\n\nThe model can be downloaded again later.",
+                f"Delete {current.text()}?\n\nYou can download it again later.",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
                 QMessageBox.StandardButton.Cancel,
             )
@@ -769,7 +792,7 @@ class SettingsWindow(QMainWindow):
                 self.model_cache_delete_requested.emit(folder_name)
 
     def _update_model_cache_delete_button(self, *_args) -> None:  # noqa: ANN002
-        self.model_cache_delete_button.setEnabled(self.model_cache_list.currentItem() is not None)
+        self.model_cache_delete_button.setEnabled(not getattr(self, "_model_cache_deleting", False) and self.model_cache_list.currentItem() is not None)
 
     def _add_or_update_word_bank_entry(self) -> None:
         wrong = self.word_bank_heard_input.text().strip()

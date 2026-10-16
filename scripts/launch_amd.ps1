@@ -5,7 +5,7 @@ if (-not $EnvironmentPath) { $EnvironmentPath = $env:SPEAK_TO_BRIDGE_AMD_ENV }
 if (-not $EnvironmentPath) {
     $legacyEnvironment = Join-Path $projectRoot ".venv-amd"
     $EnvironmentPath = if (Test-Path -LiteralPath $legacyEnvironment) { $legacyEnvironment } else {
-        Join-Path ([Environment]::GetFolderPath("UserProfile")) ".venvs\amd-rocm-7.2.1-py312"
+        Join-Path ([Environment]::GetFolderPath("UserProfile")) ".venvs\amd-rocm-10.1-py314"
     }
 }
 $amdPython = Join-Path $EnvironmentPath "Scripts\pythonw.exe"

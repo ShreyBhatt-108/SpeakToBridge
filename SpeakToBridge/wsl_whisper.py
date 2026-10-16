@@ -47,7 +47,8 @@ def worker_command(cache_dir: Path, model_name: str | None) -> list[str]:
     worker = settings.get("worker")
     if not worker:
         raise RuntimeError("Set SPEAK_TO_BRIDGE_WSL_WORKER to scripts/wsl_worker.py")
-    command = ["wsl.exe", "--distribution", settings["distribution"],
+    wsl_exe = str(Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32" / "wsl.exe")
+    command = [wsl_exe, "--distribution", settings["distribution"],
                "--exec", settings.get("python", "/opt/amd-ai/bin/python"),
                "-u", linux_path(Path(worker)), "--cache", settings.get("gpu_cache") or linux_path(cache_dir)]
     command += ["--model", model_name] if model_name else ["--probe"]

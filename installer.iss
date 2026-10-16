@@ -69,7 +69,8 @@ begin
   if FileExists(AppExecutable) then
   begin
     { Ask the existing app to save pending Word Bank edits and release workers. }
-    if not Exec(AppExecutable, '--shutdown-for-uninstall', '', SW_HIDE,
+    { Never elevate an existing executable in a per-user installation folder. }
+    if not ExecAsOriginalUser(AppExecutable, '--shutdown-for-uninstall', '', SW_HIDE,
       ewWaitUntilTerminated, ResultCode) then
       Result := 'Please close Speak to Bridge before continuing the installation.'
     else if ResultCode <> 0 then

@@ -9,6 +9,7 @@ from pathlib import Path
 from contextlib import contextmanager
 import sys
 import logging
+import json
 import importlib.metadata
 
 import numpy as np
@@ -78,6 +79,23 @@ def amd_device() -> tuple[int, str] | None:
 
 
 
+def validate_model_metadata(folder: Path) -> None:
+    # Whisper needs no remote Python, custom generation scripts or chat templates.
+    for name in ("config.json", "generation_config.json", "tokenizer_config.json"):
+        path = folder / name
+        if path.stat().st_size > 1024 * 1024:
+            raise ValueError("Model configuration is too large")
+        config = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(config, dict):
+            raise ValueError("Invalid model configuration")
+        if any(config.get(key) for key in ("auto_map", "custom_generate", "custom_pipelines", "trust_remote_code")):
+            raise ValueError("Custom model code is not supported")
+        if config.get("_attn_implementation_internal") not in (None, "eager"):
+            raise ValueError("Custom attention code is not supported")
+        if isinstance(config.get("chat_template"), dict):
+            raise ValueError("Custom chat templates are not supported")
+
+
 class AmdWhisperModel:
     def __init__(self, model_name: str, cache_dir: Path, device_index: int, status_callback=None) -> None:
         import torch
@@ -85,19 +103,24 @@ class AmdWhisperModel:
 
         self._torch = torch
         self._device = f"cuda:{device_index}"
+        from .model_revisions import WHISPER_REVISIONS
+        revision = WHISPER_REVISIONS[model_name]
         repository = f"openai/whisper-{model_name}"
         # A local_dir download contains regular files readable by both Windows
         # and WSL, unlike Linux-only symlinks written on a mounted NTFS drive.
         from .model_storage import find_cached_amd_model
         shared_model = find_cached_amd_model(cache_dir, model_name)
         if shared_model is not None:
+            validate_model_metadata(shared_model)
             repository = str(shared_model)
-        self._processor = WhisperProcessor.from_pretrained(repository, cache_dir=str(cache_dir))
+        self._processor = WhisperProcessor.from_pretrained(repository, cache_dir=str(cache_dir), revision=revision, trust_remote_code=False)
         if status_callback:
             status_callback("Reading cached model weights into memory.")
         self._model = WhisperForConditionalGeneration.from_pretrained(
             repository,
             cache_dir=str(cache_dir),
+            revision=revision,
+            trust_remote_code=False,
             torch_dtype=torch.float16,
             # Standard attention avoids dependence on optional CUDA-only kernels.
             attn_implementation="eager",
@@ -129,10 +152,10 @@ class AmdWhisperModel:
         if sys.platform == "win32":
             if status_callback:
                 status_callback("Warming Radeon inference kernels; preparing the first transcription.")
-            self.transcribe(np.zeros(16000, dtype=np.float32), "en", "", {"vad_filter": False})
+            self.transcribe(np.zeros(16000, dtype=np.float32), "en", "", {"vad_filter": False}, _warmup=True)
             torch.cuda.synchronize(device_index)
 
-    def transcribe(self, audio: np.ndarray, language: str, initial_prompt: str, vad: dict) -> str:
+    def transcribe(self, audio: np.ndarray, language: str, initial_prompt: str, vad: dict, *, _warmup: bool = False) -> str:
         if vad.get("vad_filter"):
             from .vad import get_speech_timestamps
 
@@ -152,6 +175,10 @@ class AmdWhisperModel:
             language=language, task="transcribe", num_beams=4,
             return_timestamps=True, condition_on_prev_tokens=True,
         )
+        if _warmup:
+            # Silence can generate a full hallucinated sequence. Two decoder
+            # steps warm the same encoder/beam kernels without that wasted work.
+            options["max_new_tokens"] = 2
         if initial_prompt:
             options["prompt_ids"] = self._processor.get_prompt_ids(
                 initial_prompt, return_tensors="pt"

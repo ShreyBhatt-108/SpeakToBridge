@@ -88,7 +88,8 @@ class OfflineWslCacheTests(unittest.TestCase):
         from scripts.wsl_worker import prepare_model_cache
         with tempfile.TemporaryDirectory() as directory:
             cache = Path(directory)
-            def download(repository, local_dir, allow_patterns, ignore_patterns):
+            def download(repository, local_dir, allow_patterns, ignore_patterns, revision):
+                self.assertEqual(len(revision), 40)
                 names = ["model.safetensors", "model.fp32-00001-of-00002.safetensors",
                          "model.fp32-00002-of-00002.safetensors", "model.safetensors.index.fp32.json",
                          "config.json", "generation_config.json", "preprocessor_config.json",

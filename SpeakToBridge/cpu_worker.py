@@ -15,11 +15,13 @@ import numpy as np
 class CpuWhisperWorker:
     _cpu_worker = True
 
-    def __init__(self, model_name: str, cache_dir: Path) -> None:
+    def __init__(self, model_name: str, cache_dir: Path, *, device: str = "cpu", compute_type: str = "int8") -> None:
         command = [sys.executable]
         if not getattr(sys, "frozen", False):
             command.append(str(Path(__file__).resolve().parent.parent / "launcher.py"))
-        command.extend(["--cpu-worker", model_name, str(cache_dir)])
+        if device not in ("cpu", "cuda") or compute_type not in ("int8", "float16"):
+            raise ValueError("Unsupported CTranslate2 worker runtime")
+        command.extend(["--cpu-worker", model_name, str(cache_dir), device, compute_type])
         self._lock = threading.Lock()
         self._process = subprocess.Popen(
             command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
@@ -31,7 +33,7 @@ class CpuWhisperWorker:
     def _read_reply(self):
         line = self._process.stdout.readline()
         if not line:
-            raise RuntimeError("CPU transcription worker stopped unexpectedly")
+            raise RuntimeError("Transcription worker stopped unexpectedly")
         reply = json.loads(line)
         if "error" in reply:
             raise RuntimeError(reply["error"])
@@ -80,8 +82,14 @@ def main(arguments):
         sys.stdout.write(json.dumps(value) + "\n")
         sys.stdout.flush()
     try:
+        from .cuda_runtime import configure_cuda_dlls
+        configure_cuda_dlls()
         from faster_whisper import WhisperModel
-        model = WhisperModel(arguments[0], device="cpu", compute_type="int8", download_root=arguments[1])
+        device = arguments[2] if len(arguments) > 2 else "cpu"
+        compute_type = arguments[3] if len(arguments) > 3 else "int8"
+        if device not in ("cpu", "cuda") or compute_type not in ("int8", "float16"):
+            raise ValueError("Unsupported CTranslate2 worker runtime")
+        model = WhisperModel(arguments[0], device=device, compute_type=compute_type, download_root=arguments[1])
         send({"ready": True})
         for line in sys.stdin:
             try:

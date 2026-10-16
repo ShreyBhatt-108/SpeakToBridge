@@ -93,6 +93,7 @@ def _signal_shutdown_for_uninstall() -> int:
 
 class SpeakToBridgeRuntime(QObject):
     model_cache_entries_ready = Signal(object)
+    model_cache_delete_finished = Signal(object)
 
     def __init__(self, app: QApplication) -> None:
         super().__init__()
@@ -105,6 +106,7 @@ class SpeakToBridgeRuntime(QObject):
         self._lifetime_stats: LifetimeStats = self._stats_store.load()
         self._word_bank = WordBank(get_word_bank_path())
         self._model_cache_dir = get_model_cache_dir()
+        self._model_cache_delete_in_progress = False
 
         self._hotkey = HoldHotkeyListener()
         self._apply_saved_hotkey()
@@ -203,6 +205,7 @@ class SpeakToBridgeRuntime(QObject):
         self._window.model_apply_requested.connect(self._on_model_changed)
         self._window.model_cache_refresh_requested.connect(self._on_model_cache_refresh_requested)
         self._window.model_cache_delete_requested.connect(self._on_model_cache_delete_requested)
+        self.model_cache_delete_finished.connect(self._finish_model_cache_delete)
         self._window.hotkey_apply_requested.connect(self._on_hotkey_changed)
         self._window.read_hotkey_apply_requested.connect(self._on_read_hotkey_changed)
         self._window.recording_limit_apply_requested.connect(self._on_recording_limit_changed)
@@ -228,6 +231,9 @@ class SpeakToBridgeRuntime(QObject):
         self.model_cache_entries_ready.connect(self._apply_model_cache_entries)
 
     def _on_model_changed(self, model_name: str) -> None:
+        if getattr(self, "_model_cache_delete_in_progress", False):
+            self._set_status("Wait for model deletion to finish.")
+            return
         if model_name == self._config.model_name:
             self._set_status(f"Model unchanged: {model_name}.")
             self._window.focus_model_status()
@@ -247,6 +253,9 @@ class SpeakToBridgeRuntime(QObject):
         self._notify_user(f"Model selected: {model_name}. Preparing model...", QSystemTrayIcon.MessageIcon.Information, 1600)
 
     def _on_runtime_changed(self, runtime_mode: str) -> None:
+        if getattr(self, "_model_cache_delete_in_progress", False):
+            self._set_status("Wait for model deletion to finish.")
+            return
         from .config import ALLOWED_RUNTIME_MODES
 
         if runtime_mode not in ALLOWED_RUNTIME_MODES:
@@ -377,30 +386,47 @@ class SpeakToBridgeRuntime(QObject):
         self._refresh_model_cache_list()
 
     def _on_model_cache_delete_requested(self, folder_name: str) -> None:
-        if self._controller.is_preloading:
-            self._set_status("Please wait for the model change to finish before deleting cached models.")
-            self._window.focus_model_status()
+        if (getattr(self, "_model_cache_delete_in_progress", False)
+                or self._controller.is_preloading or self._controller.is_busy or self._controller.is_recording):
+            self._set_status("Finish the current task before deleting a model.")
             return
-        active_folder = f"models--Systran--faster-whisper-{self._config.model_name}"
-        amd_folder = f"models--openai--whisper-{self._config.model_name}"
-        if folder_name in {active_folder, amd_folder}:
-            self._set_status("Cannot delete the currently selected model.")
-            self._window.focus_model_status()
+        from .model_storage import cached_model_name
+        try:
+            if cached_model_name(folder_name) == self._config.model_name:
+                self._set_status("Select another model before deleting this one.")
+                self._window.focus_model_status()
+                return
+        except ValueError:
+            self._on_error("Invalid model selection.")
             return
+        self._model_cache_delete_in_progress = True
+        self._window.set_model_cache_deleting(True)
+        threading.Thread(target=self._delete_model_cache_worker, args=(folder_name,), daemon=True).start()
+
+    def _delete_model_cache_worker(self, folder_name: str) -> None:
         try:
             removed = delete_cached_model(self._model_cache_dir, folder_name)
-            if removed:
-                self._refresh_model_cache_list()
-                self._set_status("Selected cached model deleted.")
-                self._window.focus_model_status()
-            else:
-                self._set_status("Selected cached model was not found.")
-                self._window.focus_model_status()
+            result = (removed, "")
         except Exception as exc:
             LOGGER.exception("Cached model delete failed")
-            self._on_error(f"Unable to delete selected cached model ({exc}).")
+            result = (False, str(exc))
+        self.model_cache_delete_finished.emit(result)
+
+    def _finish_model_cache_delete(self, result: object) -> None:
+        removed, error = result
+        self._model_cache_delete_in_progress = False
+        self._window.set_model_cache_deleting(False)
+        self._refresh_model_cache_list()
+        if error:
+            self._on_error("Could not delete model. See the log for details.")
+        else:
+            self._set_status("Model deleted." if removed else "Model not found.")
+        self._window.focus_model_status()
 
     def _on_hotkey_pressed(self) -> None:
+        if getattr(self, "_model_cache_delete_in_progress", False):
+            self._set_status("Wait for model deletion to finish.")
+            return
         if not self._dictation_enabled:
             self._set_status(
                 f"Dictation disabled. {self._hotkey.activation_hotkey_display} will not start recording."
@@ -425,6 +451,9 @@ class SpeakToBridgeRuntime(QObject):
         self._controller.start_recording()
 
     def _on_microphone_test_start(self) -> None:
+        if getattr(self, "_model_cache_delete_in_progress", False):
+            self._set_status("Wait for model deletion to finish.")
+            return
         if self._controller.is_recording or self._controller.is_busy or self._controller.is_preloading:
             self._set_status("Finish the current dictation or model task before starting a microphone test.")
             return
@@ -529,7 +558,8 @@ class SpeakToBridgeRuntime(QObject):
         if text == self._last_notification_message:
             return
         self._last_notification_message = text
-        self._tray.showMessage(APP_NAME, text, icon, timeout_ms)
+        from .accessibility import concise_status
+        self._tray.showMessage(APP_NAME, concise_status(text), icon, timeout_ms)
 
     def _on_tray_activated(self, reason: QSystemTrayIcon.ActivationReason) -> None:
         if reason in (QSystemTrayIcon.ActivationReason.Trigger, QSystemTrayIcon.ActivationReason.DoubleClick):
@@ -646,7 +676,7 @@ class SpeakToBridgeRuntime(QObject):
         ready_map: dict[str, bool] = {}
         for _, folder_name, model_name, ready in rows:
             if folder_name.startswith(prefix):
-                ready_map[model_name] = ready
+                ready_map[model_name] = ready_map.get(model_name, False) or ready
         self._model_ready_map = ready_map
         self._window.set_model_cache_entries(rows)
         self._window.set_model_choices_availability(self._model_ready_map, self._config.model_name)

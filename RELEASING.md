@@ -46,16 +46,36 @@ This project keeps source code in Git and publishes Windows binaries in GitHub R
 
 ### AMD runtime release
 
-Install the official ROCm 7.2.1 Windows SDK packages and PyTorch 2.9.1 wheel
-listed in `scripts/setup_amd.ps1` into an x64 Python 3.12 build environment.
-GPU availability is not required on the build host. Set
-`SPEAK_TO_BRIDGE_BUILD_PYTHON` to that interpreter and run `build.ps1 -AmdRuntime`.
-The script installs the ordinary hash lockfiles, reconciles the explicitly pinned
-AMD model dependencies from `requirements-amd.txt`, verifies ROCm imports, and
-bundles torch, Transformers and the ROCm SDK runtime packages. This AMD dependency layer
-is version-pinned but does not yet have a complete hash lockfile.
+Use x64 Python 3.14.8 or newer 3.14 maintenance and run
+`scripts/setup_amd.ps1` to install the hash-locked official AMD stable runtime
+(PyTorch 2.14.0+rocm10.1.0 / ROCm SDK 10.1.0). GPU availability is not required
+on the build host after dependencies are installed. Set
+`SPEAK_TO_BRIDGE_BUILD_PYTHON` to that interpreter and run `build.ps1 -AmdRuntime -AmdTarget gfx1151`.
+`requirements-amd.lock.txt` covers CPU/model dependencies;
+`requirements-rocm.lock.txt` covers official Windows CPython 3.14 AMD artifacts.
+The build verifies the native runtime version and trims development-only files.
 
-The output is `dist\SpeakToBridge-AMD-Setup.exe`. Build the ordinary CPU installer
+Use `build.ps1 -AmdRuntime -AmdTarget gfx1151` for the compact Strix Halo
+installer. It retains matching/family kernels and shared DLLs; the universal
+AMD build retains all eight supported target packages. Test real GPU inference
+after trimming, including Tiny/Small/Medium/Large v3 where available.
+
+For a separate NVIDIA runtime installer, use a clean CPU build environment and
+`build.ps1 -CudaRuntime`. The hash-locked NVIDIA DLL packages and their license
+metadata are bundled. Keep the standard installer free of GPU libraries. A
+compatible NVIDIA driver is still required for CUDA execution; CPU fallback
+must be tested independently of successful CUDA DLL loading.
+
+Target outputs are `dist\SpeakToBridge-AMD-gfxNNNN-Setup.exe`, except gfx1151
+uses `SpeakToBridge-AMD-StrixHalo-Setup.exe`. For local universal testing use
+`build.ps1 -AmdRuntime -AmdTarget all`, producing
+`SpeakToBridge-AMD-Universal-Setup.exe`. Its current size exceeds the
+[GitHub 2 GiB asset limit](https://docs.github.com/en/repositories/releasing-projects-on-github/about-releases),
+so publish target-specific installers. The builder checks that distributable
+installers fit the limit. All eight target mappings have regression coverage;
+only gfx1151 has physical GPU validation here.
+
+Build the ordinary CPU installer
 first if shipping both; its installer remains in `dist` while the portable folder
 is replaced by the AMD build. Generated PyInstaller specs are stored under `build`.
 Do not include private walkthroughs or local build-tool environments in a release.
@@ -140,3 +160,29 @@ app's save-and-shutdown helper before replacing dependencies.
 
 The local candidates remain unsigned unless a trusted signing certificate is
 configured. Test with Smart App Control enabled before public distribution.
+
+### rc.2 hardening and inference-only storage
+
+`build.ps1` runs `scripts/trim_runtime.py` after collection. The allowlisted trim
+removes compiler CLI executables, headers and static linker libraries; it keeps
+runtime DLLs, GPU kernels, Python modules and licenses. Validate real Radeon
+inference after changes to this list. Never prune the user's shared Python
+environments or model cache through this step.
+
+Audit the CPU lockfile and separately inventory AMD upstream advisories.
+Version-only vendor runtime pins and unsigned binaries are not security
+certification. See SECURITY_REVIEW.md for the current runtime compatibility
+constraint. Upgrades invoke the old app helper with ExecAsOriginalUser.
+
+### rc.3 validation
+
+Run all 68 regression tests under Python 3.14.8 in CPU-only and AMD environments.
+Verify frozen startup and transcription with developer Python directories
+removed from PATH. Upgrade standard → CUDA → universal AMD → Strix Halo on a
+test installation, comparing settings/Word Bank/statistics and model inventory.
+Record exact installer hashes, antivirus/SCA results and hardware limitations in
+`RELEASE_VALIDATION.md`. The Windows CI workflow also covers generic CPU
+instructions and frozen first-download transcription. CI is not a CUDA/ROCm
+hardware test. Audit tools and build-only SDK files are not application runtime
+dependencies. Keep real dictation generation settings unchanged when adjusting
+synthetic kernel warm-up.

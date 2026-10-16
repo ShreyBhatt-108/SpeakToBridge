@@ -2,7 +2,7 @@ param([string]$EnvironmentPath = "")
 $ErrorActionPreference = "Stop"
 if (-not $EnvironmentPath) { $EnvironmentPath = $env:SPEAK_TO_BRIDGE_AMD_ENV }
 if (-not $EnvironmentPath) {
-    $EnvironmentPath = Join-Path ([Environment]::GetFolderPath("UserProfile")) ".venvs\amd-rocm-7.2.1-py312"
+    $EnvironmentPath = Join-Path ([Environment]::GetFolderPath("UserProfile")) ".venvs\amd-rocm-10.1-py314"
 }
 $activate = Join-Path $EnvironmentPath "Scripts\Activate.ps1"
 if (-not (Test-Path -LiteralPath $activate)) { throw "Run scripts\setup_amd.ps1 first." }

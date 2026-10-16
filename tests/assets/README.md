@@ -1,0 +1,1 @@
+verification-speech.wav is synthetic English speech generated for local regression testing, not a microphone recording. It says: The quick brown fox jumps over the lazy dog. Speak to Bridge is running on this laptop. Format: 16 kHz mono PCM16.

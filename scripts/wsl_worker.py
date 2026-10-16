@@ -44,7 +44,8 @@ def prepare_model_cache(cache, model_name, status_callback=None):
         size_hint = " (approximately 3.1 GB of weights)" if model_name == "large-v3" else ""
         status_callback(f"Downloading missing GPU model files for '{model_name}'{size_hint}.")
     from huggingface_hub import snapshot_download
-    snapshot_download(f"openai/whisper-{model_name}", local_dir=str(model_dir),
+    from SpeakToBridge.model_revisions import WHISPER_REVISIONS
+    snapshot_download(f"openai/whisper-{model_name}", revision=WHISPER_REVISIONS[model_name], local_dir=str(model_dir),
                       allow_patterns=["*.json", "*.txt", "model.safetensors"],
                       ignore_patterns=["*fp32*"])
     if not is_model_cache_ready(model_dir):
@@ -64,14 +65,14 @@ def supervise_gpu_worker(args):
          "--cache", str(args.cache), "--model", args.model],
         stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, encoding="utf-8",
     )
-    requests = queue.Queue()
+    request_queue = queue.Queue()
     ready = threading.Event()
     def read_requests():
         saw_request = False
         for request in sys.stdin:
             saw_request = True
-            requests.put(request)
-        requests.put(None)
+            request_queue.put(request)
+        request_queue.put(None)
         # The GUI can quit while weights are still loading. Do not leave an
         # unneeded GPU child running until initialization finishes.
         if not saw_request and not ready.is_set() and child.poll() is None:
@@ -93,7 +94,7 @@ def supervise_gpu_worker(args):
                 return 1
         else:
             raise RuntimeError("GPU child exited before becoming ready")
-        for request in iter(requests.get, None):
+        for request in iter(request_queue.get, None):
             os.kill(child.pid, signal.SIGCONT)
             child.stdin.write(request)
             child.stdin.flush()
@@ -132,14 +133,10 @@ def main():
     args = parser.parse_args()
     try:
         if args.delete_model:
-            base = args.cache.resolve()
-            for prefix in ("openai-whisper-", "models--openai--whisper-"):
-                target = (base / f"{prefix}{args.delete_model}").resolve()
-                if target.parent != base:
-                    raise ValueError("Model path is outside the configured GPU cache")
-                if target.exists():
-                    shutil.rmtree(target)
-            send({"deleted": args.delete_model})
+            from SpeakToBridge.model_storage import delete_cached_model
+            removed = [delete_cached_model(args.cache, prefix + args.delete_model)
+                       for prefix in ("openai-whisper-", "models--openai--whisper-")]
+            send({"deleted": args.delete_model, "removed": any(removed)})
             return 0
         if not args.probe and not args.gpu_child:
             return supervise_gpu_worker(args)
