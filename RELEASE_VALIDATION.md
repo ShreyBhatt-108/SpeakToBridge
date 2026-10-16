@@ -1,8 +1,8 @@
 # Local release validation: 1.5.1-rc.3
 
 Built and tested 15 October 2026 on Windows 11 25H2 x64, Ryzen AI Max+ 388 /
-Radeon 8060S, driver 32.0.22064.1003. These installers are local candidates;
-no GitHub Release binaries have been uploaded.
+Radeon 8060S, driver 32.0.22064.1003. The v1.5.1-rc.3 release scope is the standard CPU and Strix Halo installers.
+CUDA remains a local candidate; universal AMD is local testing only.
 
 | Installer | Bytes | SHA-256 |
 |---|---:|---|
@@ -67,7 +67,14 @@ safetensors-only loading and deletion/subprocess fixes are documented in
 
 No physical NVIDIA GPU or separate Intel CPU was available for this local run.
 CUDA DLL loading and fallback passed; these do not verify actual NVIDIA inference.
-The pinned Windows CI workflow builds and transcribes on its runner after push;
-runner hardware is reported rather than assumed. Other AMD targets have kernel
+The independent [Windows CI run](https://github.com/ShreyBhatt-108/SpeakToBridge/actions/runs/38843858830)
+passed all regression tests, built the standard installer, transcribed with
+bundled Python and generic CPU instructions, and passed dependency audits.
+Runner hardware is reported by diagnostics rather than assumed. Other AMD targets have kernel
 selection regression coverage but need physical device/driver validation.
 Installers remain unsigned; scanning and package audits are not code signing.
+
+Temporary obsolete build environments, duplicate wheel downloads and tested
+unpacked staging copies were removed after verification, reclaiming
+19,543,706,052 bytes. Final installers, active build tools, installed application,
+user data and shared experimental environments were retained.

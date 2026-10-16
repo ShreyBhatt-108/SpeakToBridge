@@ -23,7 +23,8 @@ Another installed Python version does not affect it.
 current size exceeds GitHub's 2 GiB per-asset limit. Release builds must select
 a target explicitly, for example `build.ps1 -AmdRuntime -AmdTarget gfx1151`.
 
-These are local candidates until uploaded to GitHub Releases. All use the same
+The v1.5.1-rc.3 release ships the CPU and Strix Halo variants; CUDA and other
+GPU targets are outside this release's validated scope. All variants use the same
 application identity and can replace each other without deleting settings,
 Word Bank, statistics or models. Existing instances save and close during an
 upgrade. Graphics drivers are separate, supplied by AMD/Lenovo or NVIDIA.

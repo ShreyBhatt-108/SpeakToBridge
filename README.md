@@ -86,7 +86,8 @@ hardware target; Strix Halo is the candidate tested on this laptop.
 All variants bundle Python 3.14.8 and preserve settings, Word Bank and downloaded
 models. Users need no installed Python; other system Python versions do not
 affect the app. GPU drivers remain system prerequisites for GPU acceleration.
-The newly built v1.5.1-rc.3 candidates are not yet uploaded to Releases.
+The v1.5.1-rc.3 release provides the standard CPU and Strix Halo installers.
+The CUDA package remains a local candidate and is excluded from this release.
 Artifact hashes, checks and remaining hardware coverage are in
 [release validation](RELEASE_VALIDATION.md).
 
