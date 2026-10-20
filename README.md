@@ -26,8 +26,8 @@ ROCm backend. See [AMD setup and verification](AMD_SETUP.md). CPU processing
 continues to work without the optional runtime. Native Windows ROCm is the default AMD path and has passed packaged Large v3
 transcription on a Ryzen AI Max+ 388 / Radeon 8060S. WSL remains an optional
 alternative and has passed Tiny, Small, Medium and Large v3 GPU tests.
-The published v1.5.1-rc.3 release provides CPU and Strix Halo installers.
-The v1.6.0-rc.1 source adds meeting transcription and local AI notes.
+The v1.6.0-rc.1 release provides standard CPU and Strix Halo installers, both
+including meeting transcription and local AI notes.
 
 - **Local transcription:** recorded audio stays on the computer after the
   selected Whisper model has been downloaded.
@@ -96,7 +96,7 @@ especially useful.
 ## Install
 
 Download the current installer from
-[GitHub Releases](https://github.com/ShreyBhatt-108/SpeakToBridge/releases/latest),
+[GitHub Releases](https://github.com/ShreyBhatt-108/SpeakToBridge/releases/tag/v1.6.0-rc.1),
 then choose the appropriate published installer:
 
 - `SpeakToBridge-Setup.exe`: standard x64 build for Intel or AMD CPU processing
@@ -115,7 +115,7 @@ hardware target; Strix Halo is the candidate tested on this laptop.
 All variants bundle Python 3.14.8 and preserve settings, Word Bank and downloaded
 models. Users need no installed Python; other system Python versions do not
 affect the app. GPU drivers remain system prerequisites for GPU acceleration.
-The v1.5.1-rc.3 release provides the standard CPU and Strix Halo installers.
+The v1.6.0-rc.1 release provides the standard CPU and Strix Halo installers.
 The CUDA package remains a local candidate and is excluded from this release.
 Artifact hashes, checks and remaining hardware coverage are in
 [release validation](RELEASE_VALIDATION.md).

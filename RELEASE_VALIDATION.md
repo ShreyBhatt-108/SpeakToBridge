@@ -1,7 +1,7 @@
 # Local candidate validation: 1.6.0-rc.1
 
 CPU and Radeon frozen builds tested 18–19 October 2026 on Ryzen AI Max+ 388 /
-Radeon 8060S. This candidate has not been published as a GitHub release.
+Radeon 8060S. The two supported installers are published as v1.6.0-rc.1 GitHub Release assets.
 
 - 104 automated tests passed in both CPU and AMD environments.
 - Both frozen builds processed a synthetic 368.94-second meeting, including
@@ -16,8 +16,10 @@ Radeon 8060S. This candidate has not been published as a GitHub release.
   unit tests cover Windows-key chords and the 30-second silence timeout.
 - Bandit found no medium/high issues. Windows antivirus scanning of the CPU
   payload, including the new native notes runtime, returned without a detection.
-- Automatic installation of the final AMD installer was blocked by the Codex
-  approval service. Final installed AMD GPU/fallback checks remain unverified.
+- On 20 October, the installed AMD upgrade passed real Radeon GPU transcription
+  and isolated CPU fallback. Settings, Word Bank, statistics and nine model files
+  were preserved. Desktop startup reached GPU ready before recording; no restart
+  was required.
 - A later source-only wording correction labels per-session counts explicitly;
   the installers below predate that text correction. Persistent counts are unchanged.
 
