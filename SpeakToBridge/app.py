@@ -352,7 +352,7 @@ class SpeakToBridgeRuntime(QObject):
         menu.addSeparator()
         self._status_action = menu.addAction("Status: Ready")
         self._status_action.setEnabled(False)
-        self._word_count_action = menu.addAction("Session: 0 words (0 last)")
+        self._word_count_action = menu.addAction("Words: 0 total (0 last)")
         self._word_count_action.setEnabled(False)
         self._lifetime_word_count_action = menu.addAction(
             f"Lifetime: {self._lifetime_stats.total_words} words ({self._lifetime_stats.total_clips} clips)"
@@ -690,13 +690,13 @@ class SpeakToBridgeRuntime(QObject):
             lifetime_words=self._lifetime_stats.total_words,
             lifetime_clips=self._lifetime_stats.total_clips,
         )
-        self._word_count_action.setText(f"Session: {self._total_words} words ({self._last_words} last)")
+        self._word_count_action.setText(f"Words: {self._total_words} total ({self._last_words} last)")
         self._lifetime_word_count_action.setText(
             f"Lifetime: {self._lifetime_stats.total_words} words ({self._lifetime_stats.total_clips} clips)"
         )
         self._set_status(
             f"Transcript ready: {self._last_words} words. "
-            f"This session: {self._total_words} words in {self._total_clips} clips."
+            f"Total dictated: {self._total_words} words in {self._total_clips} clips."
         )
 
     def _on_error(self, message: str) -> None:
