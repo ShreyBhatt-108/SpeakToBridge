@@ -171,7 +171,14 @@ class WhisperEngine:
                 self._loading_in_progress = True
                 model_name = self._model_name
                 runtime_mode = self._runtime_mode
+
+            try:
                 device, compute_type = self._resolve_runtime()
+            except Exception:
+                with self._model_cv:
+                    self._loading_in_progress = False
+                    self._model_cv.notify_all()
+                raise
 
             source = (f"Hugging Face Hub (openai/whisper-{model_name})" if device in ("rocm", "wsl_rocm")
                       else self._model_source(model_name))

@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QMainWindow,
+    QTabWidget,
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
@@ -411,6 +412,9 @@ class SettingsWindow(QMainWindow):
         )
         recording_form.addRow("Maximum length:", self.recording_limit_input)
         recording_form.addRow("", self.recording_limit_apply_button)
+        silence_hint = QLabel("Dictation also stops automatically after 30 seconds without speech.")
+        silence_hint.setWordWrap(True)
+        recording_form.addRow("Silence timeout:", silence_hint)
 
         stats_group = QGroupBox("Dictation Stats")
         stats_group.setAccessibleName("Dictation statistics")
@@ -423,11 +427,11 @@ class SettingsWindow(QMainWindow):
         self.total_words_value = QLineEdit("0")
         self.total_words_value.setReadOnly(True)
         self.total_words_value.setFocusPolicy(Qt.NoFocus)
-        self.total_words_value.setAccessibleName("Total dictated words")
+        self.total_words_value.setAccessibleName("Session dictated words")
         self.total_clips_value = QLineEdit("0")
         self.total_clips_value.setReadOnly(True)
         self.total_clips_value.setFocusPolicy(Qt.NoFocus)
-        self.total_clips_value.setAccessibleName("Total dictated clips")
+        self.total_clips_value.setAccessibleName("Session dictated clips")
         self.lifetime_summary_value = QLineEdit("0 words in 0 clips")
         self.lifetime_summary_value.setReadOnly(True)
         self.lifetime_summary_value.setFocusPolicy(Qt.StrongFocus)
@@ -496,7 +500,13 @@ class SettingsWindow(QMainWindow):
         body_layout.addWidget(dictionary_group)
 
         body_layout.addStretch(1)
-        self.setCentralWidget(central)
+        from .meeting_ui import MeetingPanel
+        self.meeting_panel = MeetingPanel()
+        self.mode_tabs = QTabWidget()
+        self.mode_tabs.setAccessibleName("Speak to Bridge mode")
+        self.mode_tabs.addTab(central, "Dictation")
+        self.mode_tabs.addTab(self.meeting_panel, "Meetings")
+        self.setCentralWidget(self.mode_tabs)
         for button in self.findChildren(QPushButton):
             button.setAutoDefault(True)
             button.setDefault(False)
@@ -874,17 +884,22 @@ class SettingsWindow(QMainWindow):
             self.quit_requested.emit()
 
     def confirm_pending_changes(self) -> bool:
+        self.meeting_panel.flush_notes()
         return self._confirm_unsaved_word_bank()
 
     def save_pending_changes(self) -> bool:
-        """Persist in-window Word Bank edits without an uninstall-time prompt."""
+        """Persist in-window Word Bank and meeting-note edits before exiting."""
+        self.meeting_panel.flush_notes()
         if self._word_bank_dirty:
             self._emit_word_bank_save_requested()
         return not self._word_bank_dirty
 
     def showEvent(self, event) -> None:  # noqa: ANN001
         super().showEvent(event)
-        self.model_combo.setFocus()
+        if self.mode_tabs.currentIndex() == 1:
+            self.meeting_panel.title.setFocus()
+        else:
+            self.model_combo.setFocus()
 
     def closeEvent(self, event) -> None:  # noqa: ANN001
         if self._confirm_unsaved_word_bank():

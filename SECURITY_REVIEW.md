@@ -84,3 +84,14 @@ are preserved. No model accuracy/precision reductions were made for storage.
 - [Python 3.14.8 security maintenance](https://www.python.org/downloads/release/python-3148/)
 - [faster-whisper NVIDIA runtime requirements](https://github.com/SYSTRAN/faster-whisper#gpu)
 - [Original-user installer helper](https://jrsoftware.org/ishelp/topic_isxfunc_execasoriginaluser.htm)
+
+## Meeting feature review (1.6 candidate)
+
+The completion runtime and notes weights use fixed HTTPS sources, pinned
+revisions and SHA-256 verification. Model text is passed as data to a private
+completion process, without a shell or network server. Action items require
+transcript evidence; notes are labeled drafts for review. Recordings and notes
+are local. Successful microphone chunks are removed by default; failed chunks
+are retained for recovery. No runtime pip dependencies were added to the CPU
+package. Static analysis does not certify the security of native binaries or
+guarantee AI summary accuracy.

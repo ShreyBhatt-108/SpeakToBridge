@@ -12,6 +12,7 @@ from pathlib import Path
 MODEL_CACHE_PREFIX = "models--Systran--faster-whisper-"
 SHARED_AMD_MODEL_CACHE_PREFIX = "openai-whisper-"
 AMD_MODEL_CACHE_PREFIX = "models--openai--whisper-"
+NOTES_MODEL_CACHE_PREFIX = "notes--"
 WSL_MODEL_CACHE_PREFIX = "wsl--openai-whisper-"
 WSL_MANIFEST_NAME = ".wsl-models.json"
 REQUIRED_MODEL_FILES = frozenset({"config.json", "model.bin", "tokenizer.json", "vocabulary.txt"})
@@ -40,7 +41,7 @@ def list_cached_models(model_cache_dir: Path) -> list[CachedModelInfo]:
                 continue
         except OSError:
             continue
-        prefix = next((p for p in (MODEL_CACHE_PREFIX, AMD_MODEL_CACHE_PREFIX, SHARED_AMD_MODEL_CACHE_PREFIX) if entry.name.startswith(p)), None)
+        prefix = next((p for p in (MODEL_CACHE_PREFIX, AMD_MODEL_CACHE_PREFIX, SHARED_AMD_MODEL_CACHE_PREFIX, NOTES_MODEL_CACHE_PREFIX) if entry.name.startswith(p)), None)
         if prefix is None:
             continue
         model_name = entry.name[len(prefix) :]
@@ -52,7 +53,7 @@ def list_cached_models(model_cache_dir: Path) -> list[CachedModelInfo]:
                 folder_name=entry.name,
                 size_bytes=size_bytes,
                 ready=ready,
-                backend="AMD ROCm" if prefix in (AMD_MODEL_CACHE_PREFIX, SHARED_AMD_MODEL_CACHE_PREFIX) else "CPU/NVIDIA",
+                backend="Meeting notes" if prefix == NOTES_MODEL_CACHE_PREFIX else "AMD ROCm" if prefix in (AMD_MODEL_CACHE_PREFIX, SHARED_AMD_MODEL_CACHE_PREFIX) else "CPU/NVIDIA",
             )
         )
     for item in _read_wsl_manifest(model_cache_dir):
@@ -69,7 +70,7 @@ def list_cached_models(model_cache_dir: Path) -> list[CachedModelInfo]:
 def cached_model_name(folder_name: str) -> str:
     if not isinstance(folder_name, str):
         raise ValueError("Invalid model folder")
-    for prefix in (MODEL_CACHE_PREFIX, AMD_MODEL_CACHE_PREFIX, SHARED_AMD_MODEL_CACHE_PREFIX, WSL_MODEL_CACHE_PREFIX):
+    for prefix in (MODEL_CACHE_PREFIX, AMD_MODEL_CACHE_PREFIX, SHARED_AMD_MODEL_CACHE_PREFIX, WSL_MODEL_CACHE_PREFIX, NOTES_MODEL_CACHE_PREFIX):
         if folder_name.startswith(prefix):
             name = folder_name[len(prefix):]
             if re.fullmatch(r"[a-z0-9][a-z0-9._-]*", name):
@@ -99,7 +100,7 @@ def delete_cached_model(model_cache_dir: Path, folder_name: str) -> bool:
         entries = [item for item in _read_wsl_manifest(model_cache_dir) if item.get("model_name") != name]
         _write_wsl_manifest(model_cache_dir, entries)
         return reply.get("removed", True) is True
-    if Path(folder_name).name != folder_name or not folder_name.startswith((MODEL_CACHE_PREFIX, AMD_MODEL_CACHE_PREFIX, SHARED_AMD_MODEL_CACHE_PREFIX)):
+    if Path(folder_name).name != folder_name or not folder_name.startswith((MODEL_CACHE_PREFIX, AMD_MODEL_CACHE_PREFIX, SHARED_AMD_MODEL_CACHE_PREFIX, NOTES_MODEL_CACHE_PREFIX)):
         raise ValueError("Unsafe cached model folder name.")
     base = model_cache_dir.resolve(strict=False)
     candidate = base / folder_name
@@ -123,6 +124,9 @@ def delete_cached_model(model_cache_dir: Path, folder_name: str) -> bool:
 
 
 def is_model_cache_ready(model_folder: Path) -> bool:
+    if model_folder.name.startswith(NOTES_MODEL_CACHE_PREFIX):
+        from .meeting_notes import MODEL_FILE, _ready
+        return _ready(model_folder / MODEL_FILE, model_folder / "ready.json")
     if not model_folder.exists() or not model_folder.is_dir():
         return False
     snapshots = model_folder / "snapshots"

@@ -113,7 +113,7 @@ class AmdWhisperModel:
         if shared_model is not None:
             validate_model_metadata(shared_model)
             repository = str(shared_model)
-        self._processor = WhisperProcessor.from_pretrained(repository, cache_dir=str(cache_dir), revision=revision, trust_remote_code=False)
+        self._processor = WhisperProcessor.from_pretrained(repository, cache_dir=str(cache_dir), revision=revision, trust_remote_code=False, local_files_only=shared_model is not None)
         if status_callback:
             status_callback("Reading cached model weights into memory.")
         self._model = WhisperForConditionalGeneration.from_pretrained(
@@ -121,6 +121,7 @@ class AmdWhisperModel:
             cache_dir=str(cache_dir),
             revision=revision,
             trust_remote_code=False,
+            local_files_only=shared_model is not None,
             torch_dtype=torch.float16,
             # Standard attention avoids dependence on optional CUDA-only kernels.
             attn_implementation="eager",

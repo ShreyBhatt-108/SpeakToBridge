@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import sys
 from dataclasses import dataclass
 from typing import Set
 
@@ -52,6 +53,9 @@ def parse_hotkey_spec(spec: str) -> HotkeySpec:
     else:
         raise ValueError("Key must be F1-F12, Windows key, A-Z, or 0-9.")
 
+    if key_token == "win" and modifiers == {"win"}:
+        raise ValueError("The Windows key needs another modifier, such as Ctrl.")
+
     ordered_modifiers = [m for m in ("ctrl", "alt", "shift", "win") if m in modifiers]
     label_map = {"ctrl": "Ctrl", "alt": "Alt", "shift": "Shift", "win": "Win"}
     display = "+".join([label_map[m] for m in ordered_modifiers] + [key_token.upper()])
@@ -72,6 +76,7 @@ class HoldHotkeyListener(QObject):
         self._read_spec = parse_hotkey_spec("ctrl+f8")
         self._activation_down = False
         self._read_down = False
+        self._get_async_key_state = None
 
     @property
     def activation_hotkey_display(self) -> str:
@@ -97,7 +102,17 @@ class HoldHotkeyListener(QObject):
         if self._listener is not None:
             return
         try:
-            self._listener = keyboard.Listener(on_press=self._on_press, on_release=self._on_release)
+            if sys.platform == "win32":
+                import ctypes
+                self._get_async_key_state = ctypes.WinDLL("user32").GetAsyncKeyState
+                self._get_async_key_state.argtypes = [ctypes.c_int]
+                self._get_async_key_state.restype = ctypes.c_short
+                # Take the physical snapshot inside the low-level hook, before
+                # Windows updates the current key. Apply this event ourselves.
+                # Returning False filters pynput delivery, not the OS keystroke.
+                self._listener = keyboard.Listener(win32_event_filter=self._on_windows_event)
+            else:
+                self._listener = keyboard.Listener(on_press=self._on_press, on_release=self._on_release)
             self._listener.start()
             LOGGER.info("Global hotkey listener started")
         except Exception as exc:  # pragma: no cover
@@ -115,6 +130,42 @@ class HoldHotkeyListener(QObject):
         self._read_down = False
         if listener is not None:
             listener.stop()
+
+    @staticmethod
+    def _token_vks(token: str) -> tuple[int, ...]:
+        if token == "win":
+            return (0x5B, 0x5C)
+        if token.startswith("f") and token[1:].isdigit():
+            return (0x70 + int(token[1:]) - 1,)
+        return (ord(token.upper()),)
+
+    def _on_windows_event(self, message, data):
+        if message not in (0x100, 0x104, 0x101, 0x105):
+            return False
+        modifier_keys = {"ctrl": (0xA2, 0xA3), "alt": (0xA4, 0xA5),
+                         "shift": (0xA0, 0xA1), "win": (0x5B, 0x5C)}
+        vks = {vk for keys in modifier_keys.values() for vk in keys}
+        for spec in (self._activation_spec, self._read_spec):
+            vks.update(self._token_vks(spec.key_token))
+        vks.add(data.vkCode)
+        before = {vk: bool(self._get_async_key_state(vk) & 0x8000) for vk in vks}
+        down = message in (0x100, 0x104)
+        after = dict(before)
+        after[data.vkCode] = down
+        def chord(spec, state):
+            return (all(any(state[vk] for vk in modifier_keys[modifier]) for modifier in spec.modifiers)
+                    and any(state[vk] for vk in self._token_vks(spec.key_token)))
+        # Recover a lost key-up (sleep, desktop switch or an intercepted event)
+        # before deciding whether this is a fresh press or keyboard auto-repeat.
+        if self._activation_down and not chord(self._activation_spec, before if down else after):
+            self._activation_down = False
+            self.hotkey_released.emit()
+        if self._read_down and not chord(self._read_spec, before if down else after):
+            self._read_down = False
+        self._pressed_modifiers = {name for name, keys in modifier_keys.items() if any(after[vk] for vk in keys)}
+        if down:
+            self._on_press(keyboard.KeyCode.from_vk(data.vkCode))
+        return False
 
     def _on_press(self, key) -> None:  # noqa: ANN001
         modifier = self._key_to_modifier(key)
@@ -154,8 +205,10 @@ class HoldHotkeyListener(QObject):
         if key in (keyboard.Key.cmd, keyboard.Key.cmd_l, keyboard.Key.cmd_r):
             return "win"
         vk = getattr(key, "vk", None)
-        if vk in (91, 92):
-            return "win"
+        for modifier, codes in {"ctrl": (0x11, 0xA2, 0xA3), "alt": (0x12, 0xA4, 0xA5),
+                                "shift": (0x10, 0xA0, 0xA1), "win": (0x5B, 0x5C)}.items():
+            if vk in codes:
+                return modifier
         return None
 
     def _matches_activation(self, key) -> bool:  # noqa: ANN001
@@ -163,6 +216,8 @@ class HoldHotkeyListener(QObject):
             return False
 
         token = self._activation_spec.key_token
+        if getattr(key, "vk", None) in self._token_vks(token):
+            return True
         if token.startswith("f"):
             expected = getattr(keyboard.Key, token, None)
             return key == expected
@@ -176,6 +231,8 @@ class HoldHotkeyListener(QObject):
         if not self._read_spec.modifiers.issubset(self._pressed_modifiers):
             return False
         token = self._read_spec.key_token
+        if getattr(key, "vk", None) in self._token_vks(token):
+            return True
         if token.startswith("f"):
             expected = getattr(keyboard.Key, token, None)
             return key == expected

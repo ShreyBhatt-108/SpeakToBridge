@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
 from typing import Any, List
 
 import numpy as np
@@ -45,6 +46,7 @@ class AudioRecorder:
         self._sd_module: Any | None = None
         self._lock = threading.Lock()
         self._is_recording = False
+        self._last_frame_time = 0.0
 
     @property
     def is_recording(self) -> bool:
@@ -58,6 +60,7 @@ class AudioRecorder:
             sd = self._load_sounddevice()
             self._frames = []
             self._captured_samples = 0
+            self._last_frame_time = time.monotonic()
             self._stream = sd.InputStream(
                 samplerate=self.sample_rate,
                 channels=1,
@@ -103,6 +106,22 @@ class AudioRecorder:
             frame_copy = indata[:remaining].copy()
             self._frames.append(frame_copy)
             self._captured_samples += len(frame_copy)
+            self._last_frame_time = time.monotonic()
+
+    def recent_audio(self, seconds: float = 2.0) -> tuple[np.ndarray, float]:
+        remaining = int(seconds * self.sample_rate)
+        chunks = []
+        with self._lock:
+            captured_at = self._last_frame_time
+            for frame in reversed(self._frames):
+                if remaining <= 0:
+                    break
+                chunk = frame[-remaining:]
+                chunks.append(chunk)
+                remaining -= len(chunk)
+        if not chunks:
+            return np.array([], dtype=np.float32), captured_at
+        return np.concatenate(chunks[::-1], axis=0).reshape(-1), captured_at
 
     def set_max_duration_seconds(self, seconds: int) -> None:
         with self._lock:

@@ -1,3 +1,33 @@
+# Local candidate validation: 1.6.0-rc.1
+
+CPU and Radeon frozen builds tested 18–19 October 2026 on Ryzen AI Max+ 388 /
+Radeon 8060S. This candidate has not been published as a GitHub release.
+
+- 104 automated tests passed in both CPU and AMD environments.
+- Both frozen builds processed a synthetic 368.94-second meeting, including
+  speech after six minutes, with local AI notes and all three expected task owners.
+- CPU used Tiny INT8; Radeon used Small FP16. Different models and concurrent
+  installer compression mean these runs are not a CPU/GPU speed benchmark.
+- The CPU installer was upgraded and tested with the same long recording;
+  settings, Word Bank, statistics and nine cached model files were preserved.
+- Actual microphone capture, stop and cleanup passed without retaining test audio.
+- The frozen notes runtime worked with developer Python removed from PATH.
+- Native hotkey testing covered missed modifier releases and repeat suppression;
+  unit tests cover Windows-key chords and the 30-second silence timeout.
+- Bandit found no medium/high issues. Windows antivirus scanning of the CPU
+  payload, including the new native notes runtime, returned without a detection.
+- Automatic installation of the final AMD installer was blocked by the Codex
+  approval service. Final installed AMD GPU/fallback checks remain unverified.
+- A later source-only wording correction labels per-session counts explicitly;
+  the installers below predate that text correction. Persistent counts are unchanged.
+
+| Installer | Bytes | SHA-256 |
+|---|---:|---|
+| SpeakToBridge-Setup.exe | 109,658,828 | `2357730be87a051c5856fb35df239492b5881804638a833cffb02d38d55e2331` |
+| SpeakToBridge-AMD-StrixHalo-Setup.exe | 1,679,943,999 | `771c9e006b0987b740adbf401e72650bc88bf9ad95800566278b8061851efdf4` |
+
+---
+
 # Local release validation: 1.5.1-rc.3
 
 Built and tested 15 October 2026 on Windows 11 25H2 x64, Ryzen AI Max+ 388 /

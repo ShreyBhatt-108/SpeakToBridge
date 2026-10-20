@@ -186,3 +186,14 @@ instructions and frozen first-download transcription. CI is not a CUDA/ROCm
 hardware test. Audit tools and build-only SDK files are not application runtime
 dependencies. Keep real dictation generation settings unchanged when adjusting
 synthetic kernel warm-up.
+
+## Meeting runtime (1.6)
+
+`build.ps1` calls `scripts/setup_notes_engine.py` to fetch the pinned official
+llama.cpp b11723 Windows CPU archive and verify its SHA-256 before extraction.
+Only completion runtime files and licenses are packaged in `notes_runtime`;
+no server is shipped. The pinned Qwen3 model downloads on first notes use and is
+not embedded in installers. Verify both CPU and Strix Halo frozen builds using
+`--check-hardware --meeting --wav <16k-mono-PCM16.wav> --model tiny --cpu`
+and the equivalent `--require-amd --model small` check. Use audio longer than
+five minutes and confirm its final speech and generated notes are present.

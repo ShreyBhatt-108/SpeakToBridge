@@ -17,6 +17,7 @@ from .insertion import TextInserter
 from .sound_feedback import SoundFeedbackPlayer
 from .word_bank import WordBank
 from .whisper_engine import WhisperEngine
+from .silence_monitor import SpeechSilenceMonitor
 
 
 LOGGER = logging.getLogger(__name__)
@@ -73,6 +74,7 @@ class DictationController(QObject):
     busy_changed = Signal(bool)
     model_preload_finished = Signal(str, bool, str)
     microphone_test_finished = Signal(object)
+    silence_timeout = Signal(int)
 
     def __init__(self, config: AppConfig, model_cache_dir, word_bank: WordBank) -> None:  # noqa: ANN001
         super().__init__()
@@ -106,6 +108,9 @@ class DictationController(QObject):
         self._recording_timer.setSingleShot(True)
         self._recording_timer.timeout.connect(self._on_recording_timeout)
         self._microphone_test_phrase = "The quick brown fox jumps over the lazy dog."
+        self._recording_generation = 0
+        self._silence_monitor = None
+        self.silence_timeout.connect(self._on_silence_timeout)
 
     @property
     def is_busy(self) -> bool:
@@ -221,6 +226,14 @@ class DictationController(QObject):
         try:
             self._audio_ducker.duck()
             self._recorder.start()
+            self._recording_generation += 1
+            generation = self._recording_generation
+            self._silence_monitor = SpeechSilenceMonitor(
+                self._recorder.recent_audio,
+                lambda: self.silence_timeout.emit(generation), self.status_changed.emit,
+                sample_rate=self._recorder.sample_rate,
+            )
+            self._silence_monitor.start()
             self._recording_timer.start(self._config.max_recording_seconds * 1000)
             self._play_feedback(DICTATION_BEGIN_SOUND, wav=True)
             self._engine.prepare_async()
@@ -231,14 +244,18 @@ class DictationController(QObject):
             )
         except Exception as exc:
             self._recording_timer.stop()
+            self._stop_silence_monitor()
+            if self._recorder.is_recording:
+                self._recorder.stop()
             self._audio_ducker.restore()
             LOGGER.exception("Microphone start failed")
             self.error_occurred.emit(f"Unable to start microphone ({exc}).")
 
-    def stop_recording_and_transcribe(self, maximum_reached: bool = False) -> None:
+    def stop_recording_and_transcribe(self, maximum_reached: bool = False, silence_reached: bool = False) -> None:
         if not self._recorder.is_recording:
             return
         self._recording_timer.stop()
+        self._stop_silence_monitor()
         audio = self._recorder.stop()
         self._audio_ducker.restore()
         self._play_feedback(DICTATION_END_SOUND)
@@ -252,17 +269,31 @@ class DictationController(QObject):
             self._is_busy = True
         self.busy_changed.emit(True)
         self._play_feedback(PROCESSING_SOUND)
-        if maximum_reached:
+        if silence_reached:
+            self.status_changed.emit("30 seconds without speech. Recording stopped; transcribing locally...")
+        elif maximum_reached:
             self.status_changed.emit("Maximum recording length reached. Recording stopped; transcribing locally...")
         else:
             self.status_changed.emit("Transcribing locally...")
         worker = threading.Thread(target=self._transcribe_and_insert, args=(audio,), daemon=True)
         worker.start()
 
+    def _stop_silence_monitor(self) -> None:
+        self._recording_generation += 1
+        if self._silence_monitor is not None:
+            self._silence_monitor.stop()
+            self._silence_monitor = None
+
+    def _on_silence_timeout(self, generation: int) -> None:
+        if (generation == self._recording_generation and self._recorder.is_recording
+                and not self._microphone_test_active):
+            self.stop_recording_and_transcribe(silence_reached=True)
+
     def cancel_recording(self) -> None:
         if not self._recorder.is_recording:
             return
         self._recording_timer.stop()
+        self._stop_silence_monitor()
         self._recorder.stop()
         self._audio_ducker.restore()
         self.recording_changed.emit(False)
@@ -282,6 +313,7 @@ class DictationController(QObject):
 
     def shutdown(self) -> None:
         self._recording_timer.stop()
+        self._stop_silence_monitor()
         if self._recorder.is_recording:
             self._recorder.stop()
             self._audio_ducker.restore()
@@ -313,7 +345,7 @@ class DictationController(QObject):
                 self.status_changed.emit("Dictation disabled. Transcript was not inserted.")
                 return
             self._last_transcript = text
-            self.status_changed.emit(f"Model ready. Transcript captured using {self.runtime_description}.")
+            self.status_changed.emit("Transcript captured.")
             self.transcript_ready.emit(text)
             self.status_changed.emit("Inserting transcript...")
             inserted, msg = self._inserter.insert(text)
@@ -354,26 +386,32 @@ class DictationController(QObject):
     def _preload_model(self, model_name: str | None = None) -> None:
         requested_model = model_name or self._config.model_name
         previous_model = self._config.model_name
+        error = ""
         try:
             if model_name is not None:
                 self.set_model(model_name)
             self.status_changed.emit("Preparing selected model...")
             self._engine.warm_model()
-            self.status_changed.emit(f"Model ready. Using {self.runtime_description}.")
-            self._play_feedback(SUCCESS_SOUND, wav=True)
-            self.model_preload_finished.emit(requested_model, True, "")
+            from .vad import get_vad_model
+            get_vad_model()
         except Exception as exc:  # pragma: no cover
             LOGGER.exception("Model preload failed")
+            error = str(exc) or type(exc).__name__
             if model_name is not None and previous_model != model_name:
                 self.set_model(previous_model)
-            self.error_occurred.emit(f"Model preload failed ({exc}).")
-            self.model_preload_finished.emit(requested_model, False, str(exc))
         finally:
             with self._busy_lock:
                 self._is_preloading = False
                 should_emit_idle = not self._is_busy
             if should_emit_idle:
                 self.busy_changed.emit(False)
+        # Publish readiness only after the hotkey gate is open again.
+        if error:
+            self.error_occurred.emit(f"Model preload failed ({error}).")
+        else:
+            self.status_changed.emit(f"Model ready. Using {self.runtime_description}.")
+            self._play_feedback(SUCCESS_SOUND, wav=True)
+        self.model_preload_finished.emit(requested_model, not error, error)
 
     def _speak_text(self, text: str) -> None:
         cmd = (

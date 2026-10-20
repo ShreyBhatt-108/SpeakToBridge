@@ -70,8 +70,11 @@ if ($CudaRuntime) {
 }
 & $pythonCmd -m pip check
 if ($LASTEXITCODE -ne 0) { throw "Dependency verification failed." }
+& $pythonCmd "$PSScriptRoot\scripts\setup_notes_engine.py" --output "$PSScriptRoot\.build-tools\notes-runtime"
+if ($LASTEXITCODE -ne 0) { throw "Local notes runtime setup failed." }
 & $pythonCmd -m PyInstaller --noconfirm --windowed --onedir --noupx --name SpeakToBridge --specpath ".\build" @backendArgs `
     --collect-data faster_whisper `
+    --add-data "$PSScriptRoot\.build-tools\notes-runtime;notes_runtime" `
     --add-data "$PSScriptRoot\third_party\faster-whisper-LICENSE;licenses" `
     --add-data "$PSScriptRoot\SpeakToBridge\dictation_begin.wav;SpeakToBridge" `
     --add-data "$PSScriptRoot\SpeakToBridge\reverse_dictation_end.mp3;SpeakToBridge" `

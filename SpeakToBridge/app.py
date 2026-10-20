@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+import json
+from pathlib import Path
 import sys
 import threading
 import ctypes
@@ -15,7 +17,7 @@ from .controller import DictationController
 from .hotkey import HoldHotkeyListener
 from .logging_utils import configure_logging
 from .model_storage import delete_cached_model, format_size, list_cached_models
-from .paths import get_config_path, get_model_cache_dir, get_stats_path, get_word_bank_path
+from .paths import get_app_data_dir, get_config_path, get_model_cache_dir, get_stats_path, get_word_bank_path
 from .stats_store import LifetimeStats, StatsStore
 from .ui import SettingsWindow
 from .word_bank import WordBank
@@ -94,6 +96,9 @@ def _signal_shutdown_for_uninstall() -> int:
 class SpeakToBridgeRuntime(QObject):
     model_cache_entries_ready = Signal(object)
     model_cache_delete_finished = Signal(object)
+    meeting_entry_ready = Signal(object)
+    meeting_status_changed = Signal(str)
+    meeting_finished = Signal(str, object)
 
     def __init__(self, app: QApplication) -> None:
         super().__init__()
@@ -107,6 +112,11 @@ class SpeakToBridgeRuntime(QObject):
         self._word_bank = WordBank(get_word_bank_path())
         self._model_cache_dir = get_model_cache_dir()
         self._model_cache_delete_in_progress = False
+        self._meeting_session = None
+        self._meeting_store = None
+        self._meeting_root = get_app_data_dir() / "meetings"
+        self._quit_after_meeting = False
+        self._meeting_finishing = False
 
         self._hotkey = HoldHotkeyListener()
         self._apply_saved_hotkey()
@@ -159,6 +169,161 @@ class SpeakToBridgeRuntime(QObject):
         self._set_status(f"Ready. Press {self._hotkey.activation_hotkey_display} to start or stop dictation.")
         self._sync_tray_state()
         self._hotkey.start()
+        self._refresh_meeting_history()
+        QTimer.singleShot(0, self._prepare_startup_model)
+
+    def _prepare_startup_model(self) -> None:
+        if not self._dictation_enabled or self._controller.is_recording or self._controller.is_busy:
+            return
+        self._pending_model_name = self._config.model_name
+        self._controller.preload_model_async()
+
+    def _meeting_can_start(self) -> bool:
+        if self._meeting_session is not None:
+            return False
+        if (self._controller.is_recording or self._controller.is_busy or self._controller.is_preloading
+                or self._model_cache_delete_in_progress):
+            self._set_status("Wait for the current recording or model preparation to finish.")
+            return False
+        return True
+
+    def _start_meeting(self, title: str, source: str, keep_audio: bool) -> None:
+        self._begin_meeting(title, source, keep_audio)
+
+    def _import_meeting(self, path: str, title: str, keep_audio: bool) -> None:
+        self._begin_meeting(title, "file", keep_audio, path)
+
+    def _begin_meeting(self, title, source, keep_audio, audio_file=None) -> None:
+        if not self._meeting_can_start():
+            return
+        from .meetings import MeetingSession, MeetingStore
+        panel = self._window.meeting_panel
+        panel.flush_notes()
+        try:
+            store = MeetingStore.create(self._meeting_root, title, source, keep_audio)
+        except Exception as exc:
+            LOGGER.exception("Could not create meeting storage")
+            self._on_error(f"Could not save a new meeting ({exc}).")
+            return
+        self._meeting_store = store
+        panel.set_document(*store.load())
+        session = MeetingSession(
+            self._controller._engine, store,
+            lambda entry: self.meeting_entry_ready.emit((str(store.folder), entry)),
+            self.meeting_status_changed.emit, self.meeting_finished.emit,
+            transform=self._word_bank.apply, model_cache_dir=self._model_cache_dir,
+        )
+        self._meeting_session = session
+        self._meeting_finishing = False
+        panel.set_active(True)
+        self._window.mode_tabs.setCurrentIndex(1)
+        try:
+            session.start(source, audio_file)
+        except Exception as exc:
+            self._meeting_session = None
+            panel.set_active(False)
+            store.update(status="needs_attention", errors=[str(exc)])
+            self._on_error(f"Could not start meeting ({exc}).")
+        self._refresh_meeting_history()
+
+    def _stop_meeting(self) -> None:
+        if self._meeting_session is None:
+            return
+        self._meeting_finishing = True
+        self._meeting_session.stop()
+        self._window.meeting_panel.set_active(True, finishing=True)
+        self._window.meeting_panel.status.setText("Stopping capture and finishing the transcript...")
+
+    def _on_meeting_entry(self, payload) -> None:
+        folder, entry = payload
+        if self._meeting_store is not None and str(self._meeting_store.folder) == folder:
+            self._window.meeting_panel.append_entry(entry)
+            self._window.set_last_transcription_backend(self._controller.runtime_description)
+
+    def _on_meeting_finished(self, folder: str, errors: object) -> None:
+        self._meeting_session = None
+        self._meeting_finishing = False
+        self._window.meeting_panel.flush_notes()
+        self._window.meeting_panel.set_active(False)
+        if self._meeting_store is not None:
+            ai_notes=self._meeting_store.folder / "ai-notes.md"
+            metadata=json.loads((self._meeting_store.folder / "meeting.json").read_text(encoding="utf-8"))
+            if ai_notes.is_file() and metadata.get("notes_status") == "ready":
+                self._window.meeting_panel.append_generated_notes(ai_notes.read_text(encoding="utf-8"))
+        self._refresh_model_cache_list()
+        message = "Meeting saved." if not errors else "Meeting saved. Some audio needs attention; see the log and saved meeting folder."
+        self._window.meeting_panel.status.setText(message)
+        self._set_status(message)
+        self._refresh_meeting_history()
+        if self._quit_after_meeting:
+            self.shutdown()
+
+    def _regenerate_meeting_notes(self) -> None:
+        if self._meeting_store is None or not self._meeting_can_start():
+            return
+        from .meetings import MeetingSession
+        store=self._meeting_store
+        self._window.meeting_panel.flush_notes()
+        session=MeetingSession(self._controller._engine,store,lambda entry:None,
+                               self.meeting_status_changed.emit,self.meeting_finished.emit,
+                               model_cache_dir=self._model_cache_dir)
+        self._meeting_session=session
+        self._window.meeting_panel.set_active(True,finishing=True)
+        session.start("notes")
+
+    def _save_meeting_notes(self, notes: str) -> None:
+        if self._meeting_store is not None:
+            try:
+                self._meeting_store.save_notes(notes)
+            except Exception as exc:
+                LOGGER.exception("Meeting notes save failed")
+                self._on_error(f"Could not save meeting notes ({exc}).")
+
+    def _open_meeting(self, folder: str) -> None:
+        if not folder or self._meeting_session is not None:
+            return
+        from .meetings import MeetingStore
+        path = Path(folder)
+        if path.is_symlink() or path.is_junction() or path.resolve().parent != self._meeting_root.resolve():
+            self._on_error("Invalid saved meeting selection.")
+            return
+        try:
+            self._window.meeting_panel.flush_notes()
+            store = MeetingStore(path)
+            document = store.load()
+            self._meeting_store = store
+            self._window.meeting_panel.set_document(*document)
+            self._window.meeting_panel.status.setText("Saved meeting opened.")
+        except Exception as exc:
+            LOGGER.exception("Could not open meeting")
+            self._on_error(f"Could not open meeting ({exc}).")
+
+    def _export_meeting(self, path: str) -> None:
+        if self._meeting_store is None:
+            return
+        try:
+            self._window.meeting_panel.flush_notes()
+            Path(path).write_text(self._meeting_store.export_markdown(), encoding="utf-8")
+            self._window.meeting_panel.status.setText("Notes and transcript exported.")
+        except Exception as exc:
+            LOGGER.exception("Meeting export failed")
+            self._on_error(f"Could not export meeting ({exc}).")
+
+    def _refresh_meeting_history(self) -> None:
+        from .meetings import MeetingStore
+        items = []
+        if self._meeting_root.is_dir():
+            for folder in sorted(self._meeting_root.iterdir(), reverse=True):
+                if not folder.is_dir() or folder.is_symlink() or folder.is_junction():
+                    continue
+                try:
+                    metadata = json.loads((folder / "meeting.json").read_text(encoding="utf-8"))
+                    items.append((metadata["created_at"][:16] + " — " + metadata["title"], str(folder)))
+                except (OSError, ValueError, KeyError):
+                    LOGGER.warning("Could not read saved meeting metadata: %s", folder.name)
+                if len(items) >= 100:
+                    break
+        self._window.meeting_panel.set_history(items)
 
     def _setup_tray(self) -> None:
         icon = self._app.style().standardIcon(QStyle.SP_MediaPlay)
@@ -187,7 +352,7 @@ class SpeakToBridgeRuntime(QObject):
         menu.addSeparator()
         self._status_action = menu.addAction("Status: Ready")
         self._status_action.setEnabled(False)
-        self._word_count_action = menu.addAction("Words: 0 total (0 last)")
+        self._word_count_action = menu.addAction("Session: 0 words (0 last)")
         self._word_count_action.setEnabled(False)
         self._lifetime_word_count_action = menu.addAction(
             f"Lifetime: {self._lifetime_stats.total_words} words ({self._lifetime_stats.total_clips} clips)"
@@ -202,6 +367,17 @@ class SpeakToBridgeRuntime(QObject):
         self._tray.show()
 
     def _wire_events(self) -> None:
+        panel = self._window.meeting_panel
+        panel.start_requested.connect(self._start_meeting)
+        panel.stop_requested.connect(self._stop_meeting)
+        panel.import_requested.connect(self._import_meeting)
+        panel.open_saved_requested.connect(self._open_meeting)
+        panel.notes_changed.connect(self._save_meeting_notes)
+        panel.export_requested.connect(self._export_meeting)
+        panel.generate_notes_requested.connect(self._regenerate_meeting_notes)
+        self.meeting_entry_ready.connect(self._on_meeting_entry)
+        self.meeting_status_changed.connect(panel.status.setText)
+        self.meeting_finished.connect(self._on_meeting_finished)
         self._window.model_apply_requested.connect(self._on_model_changed)
         self._window.model_cache_refresh_requested.connect(self._on_model_cache_refresh_requested)
         self._window.model_cache_delete_requested.connect(self._on_model_cache_delete_requested)
@@ -231,10 +407,13 @@ class SpeakToBridgeRuntime(QObject):
         self.model_cache_entries_ready.connect(self._apply_model_cache_entries)
 
     def _on_model_changed(self, model_name: str) -> None:
+        if getattr(self, "_meeting_session", None) is not None:
+            self._set_status("Finish the meeting before using dictation or changing its model.")
+            return
         if getattr(self, "_model_cache_delete_in_progress", False):
             self._set_status("Wait for model deletion to finish.")
             return
-        if model_name == self._config.model_name:
+        if model_name == self._config.model_name and self._controller.runtime_description != "Not loaded yet":
             self._set_status(f"Model unchanged: {model_name}.")
             self._window.focus_model_status()
             return
@@ -253,6 +432,9 @@ class SpeakToBridgeRuntime(QObject):
         self._notify_user(f"Model selected: {model_name}. Preparing model...", QSystemTrayIcon.MessageIcon.Information, 1600)
 
     def _on_runtime_changed(self, runtime_mode: str) -> None:
+        if getattr(self, "_meeting_session", None) is not None:
+            self._set_status("Finish the meeting before using dictation or changing its model.")
+            return
         if getattr(self, "_model_cache_delete_in_progress", False):
             self._set_status("Wait for model deletion to finish.")
             return
@@ -269,7 +451,9 @@ class SpeakToBridgeRuntime(QObject):
         self._controller.set_runtime(runtime_mode)
         self._config.runtime_mode = runtime_mode
         self._config_store.save(self._config)
-        self._set_status("Processing device saved. The selected backend will load on the next dictation.")
+        self._pending_model_name = self._config.model_name
+        self._controller.preload_model_async()
+        self._set_status("Processing device saved. Preparing selected model...")
         self._refresh_model_cache_list()
 
     def _on_model_preload_finished(self, model_name: str, success: bool, message: str) -> None:
@@ -386,6 +570,9 @@ class SpeakToBridgeRuntime(QObject):
         self._refresh_model_cache_list()
 
     def _on_model_cache_delete_requested(self, folder_name: str) -> None:
+        if getattr(self, "_meeting_session", None) is not None:
+            self._set_status("Finish the meeting before using dictation or changing its model.")
+            return
         if (getattr(self, "_model_cache_delete_in_progress", False)
                 or self._controller.is_preloading or self._controller.is_busy or self._controller.is_recording):
             self._set_status("Finish the current task before deleting a model.")
@@ -424,6 +611,13 @@ class SpeakToBridgeRuntime(QObject):
         self._window.focus_model_status()
 
     def _on_hotkey_pressed(self) -> None:
+        if getattr(self, "_meeting_session", None) is not None:
+            self._set_status("Finish the meeting before using dictation or changing its model.")
+            return
+        # Stopping an existing dictation must never be gated by preparation.
+        if self._controller.is_recording and not self._controller.is_microphone_test_recording:
+            self._controller.stop_recording_and_transcribe()
+            return
         if getattr(self, "_model_cache_delete_in_progress", False):
             self._set_status("Wait for model deletion to finish.")
             return
@@ -451,6 +645,9 @@ class SpeakToBridgeRuntime(QObject):
         self._controller.start_recording()
 
     def _on_microphone_test_start(self) -> None:
+        if getattr(self, "_meeting_session", None) is not None:
+            self._set_status("Finish the meeting before using dictation or changing its model.")
+            return
         if getattr(self, "_model_cache_delete_in_progress", False):
             self._set_status("Wait for model deletion to finish.")
             return
@@ -493,13 +690,13 @@ class SpeakToBridgeRuntime(QObject):
             lifetime_words=self._lifetime_stats.total_words,
             lifetime_clips=self._lifetime_stats.total_clips,
         )
-        self._word_count_action.setText(f"Words: {self._total_words} total ({self._last_words} last)")
+        self._word_count_action.setText(f"Session: {self._total_words} words ({self._last_words} last)")
         self._lifetime_word_count_action.setText(
             f"Lifetime: {self._lifetime_stats.total_words} words ({self._lifetime_stats.total_clips} clips)"
         )
         self._set_status(
             f"Transcript ready: {self._last_words} words. "
-            f"Total dictated: {self._total_words} words in {self._total_clips} clips."
+            f"This session: {self._total_words} words in {self._total_clips} clips."
         )
 
     def _on_error(self, message: str) -> None:
@@ -572,6 +769,12 @@ class SpeakToBridgeRuntime(QObject):
         self._sync_tray_state()
 
     def shutdown(self) -> None:
+        if self._meeting_session is not None:
+            self._quit_after_meeting = True
+            self._meeting_session.cancel_for_shutdown()
+            self._stop_meeting()
+            return
+        self._window.meeting_panel.flush_notes()
         self._uninstall_shutdown_timer.stop()
         if self._uninstall_shutdown_event:
             ctypes.windll.kernel32.CloseHandle(self._uninstall_shutdown_event)

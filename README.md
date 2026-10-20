@@ -2,7 +2,7 @@
 
 > **Speak. Bridge. Done.**
 
-An accessible, privacy-conscious dictation application for Windows.
+An accessible, local dictation and meeting transcription application for Windows.
 
 Speak to Bridge records speech on demand, transcribes it locally with
 [faster-whisper](https://github.com/SYSTRAN/faster-whisper), and inserts the
@@ -26,8 +26,8 @@ ROCm backend. See [AMD setup and verification](AMD_SETUP.md). CPU processing
 continues to work without the optional runtime. Native Windows ROCm is the default AMD path and has passed packaged Large v3
 transcription on a Ryzen AI Max+ 388 / Radeon 8060S. WSL remains an optional
 alternative and has passed Tiny, Small, Medium and Large v3 GPU tests.
-The v1.5.1-rc.3 CPU, CUDA and AMD installers contain these repairs. They are local
-release-candidate artifacts; older public installers predate the fixes.
+The published v1.5.1-rc.3 release provides CPU and Strix Halo installers.
+The v1.6.0-rc.1 source adds meeting transcription and local AI notes.
 
 - **Local transcription:** recorded audio stays on the computer after the
   selected Whisper model has been downloaded.
@@ -48,6 +48,35 @@ release-candidate artifacts; older public installers predate the fixes.
   in memory to prevent an abandoned recording from growing indefinitely.
 - **Windows-aware presentation:** the interface follows native fonts, colours,
   dark mode, high-contrast settings, and focus behaviour.
+
+## Meetings and automatic notes
+
+Open **Meetings** to record the default microphone for a long session, or choose
+**Transcribe Audio File**. Meeting mode supports recordings longer than five
+minutes and saves timestamped transcript sections as processing completes.
+**Stop Meeting** finishes pending transcription and creates an AI draft containing
+a summary, decisions and action items. Review the draft: automatic notes can
+still miss or misunderstand speech. Edit notes in the app and export notes plus
+the transcript as Markdown or plain text. Meetings never paste into another app.
+
+The notes engine is a private, CPU-only llama.cpp worker. Its Qwen3 1.7B
+Q4_K_M model downloads once (about 1.28 GB) into the app's model cache; subsequent
+notes work offline. It does not require PyTorch, a GPU, or a separately installed
+Python. Notes generation uses at most four CPU threads. Whisper transcription
+continues to use your selected CPU or Radeon backend. The model manager can delete
+the notes model when no meeting is running; it downloads again when needed.
+
+Meeting files live under `%LOCALAPPDATA%\SpeakToBridge\meetings`.
+Processed microphone audio is deleted by default; enable **Keep audio** before
+recording to retain it. Failed or interrupted chunks are retained for recovery.
+Imported audio files are left unchanged. Transcripts and editable notes remain
+on this computer and are not uploaded to an AI service.
+
+Dictation remains separate: it stops after **30 seconds without speech**, with
+its configured total recording limit as an additional safeguard. Meetings do not
+use that silence timeout. The selected dictation model prepares in the background
+on launch, before the first recording; GPU preparation can take time. The hotkey
+status tells you when preparation is complete.
 
 ## Accessibility
 

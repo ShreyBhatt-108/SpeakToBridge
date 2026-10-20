@@ -102,3 +102,10 @@ Smart App Control independently.
 - [AMD stable packaging](https://github.com/ROCm/TheRock/blob/main/RELEASES.md)
 - [CTranslate2 hardware support](https://opennmt.net/CTranslate2/hardware_support.html)
 - [faster-whisper NVIDIA requirements](https://github.com/SYSTRAN/faster-whisper#gpu)
+
+## Meeting notes in 1.6
+
+Meetings reuse the selected native ROCm or CPU Whisper backend. Automatic notes
+run in an isolated CPU llama.cpp process, using a separate 1.28 GB Qwen3 GGUF
+model in the Windows app cache. They do not require another ROCm installation
+or a change to the shared experimental Python environment.

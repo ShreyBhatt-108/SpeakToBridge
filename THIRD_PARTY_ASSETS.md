@@ -22,3 +22,12 @@ faster-whisper 1.2.1 (SYSTRAN, MIT license). It reuses the already-bundled Siler
 VAD v6 ONNX asset. The code's original license is retained in its header and in
 `third_party/faster-whisper-LICENSE`, included in packaged builds under `licenses`.
 Only asset lookup, float32 normalization and passive ONNX waiting are changed.
+
+## Local meeting notes
+
+- llama.cpp b11723: https://github.com/ggml-org/llama.cpp/tree/b11723 (MIT).
+  Packaged completion runtime includes its license and the LLVM OpenMP license.
+- Qwen3-1.7B Q4_K_M: https://huggingface.co/ggml-org/Qwen3-1.7B-GGUF
+  (Qwen3 model, Apache-2.0). Downloaded separately on first notes generation.
+  Runtime archive and model are pinned and SHA-256 verified; see
+  `scripts/setup_notes_engine.py` and `SpeakToBridge/meeting_notes.py`.

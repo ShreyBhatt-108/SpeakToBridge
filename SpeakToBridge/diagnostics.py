@@ -1,4 +1,5 @@
 """Diagnostics available in both source and packaged releases."""
+
 from __future__ import annotations
 
 import argparse
@@ -9,6 +10,8 @@ import sys
 import subprocess
 import traceback
 import wave
+import tempfile
+import time
 from pathlib import Path
 
 import numpy as np
@@ -24,18 +27,42 @@ def main(arguments: list[str]) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=Path)
     parser.add_argument("--wav", type=Path)
-    parser.add_argument("--model", default="small", choices=("tiny", "base", "small", "medium", "large-v3"))
+    parser.add_argument(
+        "--model",
+        default="small",
+        choices=("tiny", "base", "small", "medium", "large-v3"),
+    )
     parser.add_argument("--cpu", action="store_true")
+    parser.add_argument(
+        "--meeting",
+        action="store_true",
+        help="Test chunked meeting transcription and local AI notes",
+    )
     parser.add_argument("--require-amd", action="store_true")
     args = parser.parse_args(arguments)
-    result = {"version": APP_VERSION, "python": platform.python_version(), "architecture": platform.machine(), "frozen": bool(getattr(sys, "frozen", False))}
+    result = {
+        "version": APP_VERSION,
+        "python": platform.python_version(),
+        "architecture": platform.machine(),
+        "frozen": bool(getattr(sys, "frozen", False)),
+    }
     exit_code = 0
     if sys.platform == "win32":
         try:
             hardware = subprocess.run(
-                [str(Path(os.environ.get("SystemRoot", r"C:\Windows")) / r"System32\WindowsPowerShell\v1.0\powershell.exe"), "-NoProfile", "-Command",
-                 "@{cpu=(Get-CimInstance Win32_Processor | Select-Object -ExpandProperty Name); graphics=@(Get-CimInstance Win32_VideoController | Select-Object Name,DriverVersion)} | ConvertTo-Json -Depth 4"],
-                capture_output=True, text=True, timeout=20, check=True,
+                [
+                    str(
+                        Path(os.environ.get("SystemRoot", r"C:\Windows"))
+                        / r"System32\WindowsPowerShell\v1.0\powershell.exe"
+                    ),
+                    "-NoProfile",
+                    "-Command",
+                    "@{cpu=(Get-CimInstance Win32_Processor | Select-Object -ExpandProperty Name); graphics=@(Get-CimInstance Win32_VideoController | Select-Object Name,DriverVersion)} | ConvertTo-Json -Depth 4",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=20,
+                check=True,
                 creationflags=subprocess.CREATE_NO_WINDOW,
             )
             result["windows_hardware"] = json.loads(hardware.stdout)
@@ -49,22 +76,41 @@ def main(arguments: list[str]) -> int:
             try:
                 result.update(WslWhisperModel.probe(get_model_cache_dir()))
             except Exception as exc:
-                result.update(amd_gpu=None, optional_runtime_error=str(exc), optional_runtime_traceback=traceback.format_exc())
+                result.update(
+                    amd_gpu=None,
+                    optional_runtime_error=str(exc),
+                    optional_runtime_traceback=traceback.format_exc(),
+                )
         else:
             try:
                 with optional_runtime_import():
                     import torch
-                    from transformers import WhisperForConditionalGeneration, WhisperProcessor
+                    from transformers import (
+                        WhisperForConditionalGeneration,
+                        WhisperProcessor,
+                    )
 
-                    result.update(rocm_version=torch.version.hip, torch_version=torch.__version__, whisper_imports=True)
+                    result.update(
+                        rocm_version=torch.version.hip,
+                        torch_version=torch.__version__,
+                        whisper_imports=True,
+                    )
             except Exception as exc:
-                result.update(rocm_version=None, whisper_imports=False, optional_runtime_error=str(exc), optional_runtime_traceback=traceback.format_exc())
+                result.update(
+                    rocm_version=None,
+                    whisper_imports=False,
+                    optional_runtime_error=str(exc),
+                    optional_runtime_traceback=traceback.format_exc(),
+                )
         candidate = amd_device() if not args.cpu and not wsl_enabled() else None
         if not wsl_enabled() or args.cpu:
             result["amd_gpu"] = candidate[1] if candidate else None
         if candidate:
             import torch
-            matrix = torch.ones((32, 32), device=f"cuda:{candidate[0]}", dtype=torch.float16)
+
+            matrix = torch.ones(
+                (32, 32), device=f"cuda:{candidate[0]}", dtype=torch.float16
+            )
             result["gpu_matrix_test"] = (matrix @ matrix).float().mean().item() == 32
             if not result["gpu_matrix_test"]:
                 raise RuntimeError("GPU FP16 matrix multiplication failed")
@@ -72,16 +118,84 @@ def main(arguments: list[str]) -> int:
             exit_code = 1
         if args.wav:
             with wave.open(str(args.wav), "rb") as wav:
-                if (wav.getframerate(), wav.getnchannels(), wav.getsampwidth()) != (16000, 1, 2):
+                if (wav.getframerate(), wav.getnchannels(), wav.getsampwidth()) != (
+                    16000,
+                    1,
+                    2,
+                ):
                     raise ValueError("Use a 16 kHz mono PCM16 WAV")
-                audio = np.frombuffer(wav.readframes(wav.getnframes()), dtype="<i2").astype(np.float32) / 32768.0
-            engine = WhisperEngine(args.model, "en", "cpu" if args.cpu else "cpu_auto_gpu", "pause_preserving", get_model_cache_dir())
-            result["transcript"] = engine.transcribe(audio)
-            result["actual_backend"] = engine.runtime_description
-            from .cpu_worker import CpuWhisperWorker
-            result["cpu_worker_isolated"] = isinstance(engine._model, CpuWhisperWorker)
-            if args.require_amd and not engine.runtime_description.startswith("AMD ROCm"):
-                exit_code = 1
+                duration = wav.getnframes() / wav.getframerate()
+                if not args.meeting:
+                    audio = (
+                        np.frombuffer(
+                            wav.readframes(wav.getnframes()), dtype="<i2"
+                        ).astype(np.float32)
+                        / 32768.0
+                    )
+            engine = WhisperEngine(
+                args.model,
+                "en",
+                "cpu" if args.cpu else "cpu_auto_gpu",
+                "pause_preserving",
+                get_model_cache_dir(),
+            )
+            try:
+                if args.meeting:
+                    from .meetings import MeetingStore, MeetingSession
+
+                    with tempfile.TemporaryDirectory(
+                        prefix="speak-to-bridge-meeting-check-"
+                    ) as temporary:
+                        store = MeetingStore.create(
+                            Path(temporary), "Meeting diagnostic", "file"
+                        )
+                        statuses = []
+                        finished = []
+                        session = MeetingSession(
+                            engine,
+                            store,
+                            lambda entry: None,
+                            statuses.append,
+                            lambda folder, errors: finished.append(errors),
+                            model_cache_dir=get_model_cache_dir(),
+                        )
+                        tick = time.perf_counter()
+                        session._run("file", args.wav)
+                        metadata, entries, _ = store.load()
+                        result.update(
+                            meeting_duration_seconds=duration,
+                            meeting_processing_seconds=time.perf_counter() - tick,
+                            meeting_entries=entries,
+                            meeting_status=metadata,
+                            transcript=" ".join(entry["text"] for entry in entries),
+                        )
+                        notes_path = store.folder / "ai-notes.md"
+                        result["meeting_notes"] = (
+                            notes_path.read_text(encoding="utf-8")
+                            if notes_path.exists()
+                            else ""
+                        )
+                        if finished != [[]] or metadata.get("notes_status") != "ready":
+                            exit_code = 1
+                            log = store.folder / "notes-engine.log"
+                            if log.exists():
+                                result["notes_engine_error"] = log.read_text(
+                                    encoding="utf-8", errors="replace"
+                                )[-4000:]
+                else:
+                    result["transcript"] = engine.transcribe(audio)
+                result["actual_backend"] = engine.runtime_description
+                from .cpu_worker import CpuWhisperWorker
+
+                result["cpu_worker_isolated"] = isinstance(
+                    engine._model, CpuWhisperWorker
+                )
+                if args.require_amd and not engine.runtime_description.startswith(
+                    "AMD ROCm"
+                ):
+                    exit_code = 1
+            finally:
+                engine.close()
     except Exception:
         result["error"] = traceback.format_exc()
         exit_code = 1

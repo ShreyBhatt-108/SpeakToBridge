@@ -29,11 +29,12 @@ def concise_status(message: str) -> str:
         (("warming radeon",), "Preparing GPU."),
         (("gpu initialization failed",), "GPU unavailable. Using CPU."),
         (("gpu transcription failed",), "GPU failed. Retrying on CPU."),
-        (("processing device saved",), "Device saved. Applies next dictation."),
+        (("processing device saved",), "Device saved. Preparing model."),
         (("word bank saved",), "Word Bank saved."),
         (("unable to start microphone",), "Microphone unavailable. Check microphone settings."),
         (("transcription failed",), "Transcription failed. Details are in the log."),
         (("maximum recording length reached",), "Recording limit reached. Transcribing."),
+        (("30 seconds without speech",), "Silence timeout. Transcribing."),
         (("downloading missing gpu model", "downloading model"), "Downloading model."),
     )
     for prefixes, brief in patterns:
